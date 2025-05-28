@@ -81,6 +81,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     score_code: currentScoreCode,
                     completion: completion
                 })
+            }).then(() => {
+                // 保存成功后刷新历史记录
+                refreshHistory();
             });
         }
     });
@@ -122,6 +125,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // 然后更新收藏状态
             fetch(`/api/scores/${currentScoreCode}/favorite`, {
                 method: 'POST'
+            }).then(() => {
+                // 收藏状态更新后刷新历史记录
+                refreshHistory();
             });
         }
     });
@@ -161,25 +167,33 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // 加载历史记录
-    fetch('/api/scores')
-        .then(response => response.json())
-        .then(scores => {
-            scores.forEach(score => {
-                const item = document.createElement('div');
-                item.className = 'history-item';
-                item.id = `history-${score.score_code}`;
-                const date = new Date(score.created_at).toLocaleString();
-                item.innerHTML = `
-                    <div class="history-content">
-                        <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
-                        <div>完成率：<span class="completion">${score.completion}%</span></div>
-                        <div class="timestamp">${date}</div>
-                    </div>
-                    <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>
-                `;
-                historyList.appendChild(item);
+    // 刷新历史记录
+    function refreshHistory() {
+        fetch('/api/scores')
+            .then(response => response.json())
+            .then(scores => {
+                // 清空现有历史记录
+                historyList.innerHTML = '';
+                // 重新添加所有记录
+                scores.forEach(score => {
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    item.id = `history-${score.score_code}`;
+                    const date = new Date(score.created_at).toLocaleString();
+                    item.innerHTML = `
+                        <div class="history-content">
+                            <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
+                            <div>完成率：<span class="completion">${score.completion}%</span></div>
+                            <div class="timestamp">${date}</div>
+                        </div>
+                        <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>
+                    `;
+                    historyList.appendChild(item);
+                });
             });
-        });
+    }
+
+    // 加载历史记录
+    refreshHistory();
 }); 
 

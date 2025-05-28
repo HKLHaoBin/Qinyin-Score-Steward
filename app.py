@@ -172,10 +172,25 @@ def save_score():
         
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
-        c.execute('''
-            INSERT INTO scores (score_code, completion, difficulty, region) 
-            VALUES (?, ?, 0, 'CN')
-        ''', (score_code, completion))
+        
+        # 检查曲谱码是否存在
+        c.execute('SELECT id FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (score_code,))
+        existing_record = c.fetchone()
+        
+        if existing_record:
+            # 如果存在，更新记录
+            c.execute('''
+                UPDATE scores 
+                SET completion = ?, created_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (completion, existing_record[0]))
+        else:
+            # 如果不存在，创建新记录
+            c.execute('''
+                INSERT INTO scores (score_code, completion, difficulty, region) 
+                VALUES (?, ?, 0, 'CN')
+            ''', (score_code, completion))
+        
         conn.commit()
         conn.close()
         
