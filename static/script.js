@@ -104,6 +104,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // 收藏按钮点击事件
     favoriteBtn.addEventListener('click', function() {
         if (currentScoreCode) {
+            // 先保存完成率
+            const completion = parseInt(completionInput.value);
+            if (completion >= 0 && completion <= 100) {
+                fetch('/api/scores/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        score_code: currentScoreCode,
+                        completion: completion
+                    })
+                });
+            }
+            
+            // 然后更新收藏状态
             fetch(`/api/scores/${currentScoreCode}/favorite`, {
                 method: 'POST'
             });
@@ -122,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div>完成率：<span class="completion">${data.completion}%</span></div>
                 <div class="timestamp">${now}</div>
             </div>
-            <button class="favorite-btn" onclick="toggleFavorite('${data.score_code}')">☆</button>
+            <span class="favorite-btn">${data.is_favorite ? '★' : '☆'}</span>
         `;
         historyList.insertBefore(item, historyList.firstChild);
     }
@@ -160,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div>完成率：<span class="completion">${score.completion}%</span></div>
                         <div class="timestamp">${date}</div>
                     </div>
-                    <button class="favorite-btn" onclick="toggleFavorite('${score.score_code}')">${score.is_favorite ? '★' : '☆'}</button>
+                    <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>
                 `;
                 historyList.appendChild(item);
             });

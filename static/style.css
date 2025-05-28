@@ -257,15 +257,10 @@ h1 {
     min-height: 1.5em;
 }
 .favorite-btn {
-    background: none;
-    border: none;
     font-size: 1.5em;
-    cursor: pointer;
     padding: 5px;
     color: #ffc107;
-}
-.favorite-btn:hover {
-    color: #ff9800;
+    cursor: default;
 }
 .history-list {
     margin-top: 20px;
