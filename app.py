@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 import sqlite3
 import os
 import pyperclip
@@ -7,39 +7,9 @@ import time
 from flask_socketio import SocketIO
 import re
 from datetime import datetime
-from threading import Lock
-import shutil
-import sys
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
-
-# 添加锁
-save_lock = Lock()
-last_save_time = 0
-SAVE_COOLDOWN = 1  # 1秒冷却时间
-
-def backup_database():
-    """备份数据库文件到备份文件夹"""
-    try:
-        # 创建备份文件夹（如果不存在）
-        backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
-        if not os.path.exists(backup_dir):
-            os.makedirs(backup_dir)
-        
-        # 生成备份文件名（使用时间戳）
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_file = os.path.join(backup_dir, f'scores_{timestamp}.db')
-        
-        # 复制数据库文件
-        if os.path.exists('scores.db'):
-            shutil.copy2('scores.db', backup_file)
-            print(f'数据库已备份到: {backup_file}')
-        else:
-            print('数据库文件不存在，跳过备份')
-            
-    except Exception as e:
-        print(f'备份数据库时出错: {e}')
+socketio = SocketIO(app)
 
 # 数据库初始化
 def init_db():
@@ -95,14 +65,7 @@ def init_db():
         # 如果不存在，添加 created_at 列
         c.execute('ALTER TABLE scores ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
     
-    # 创建唯一索引（如果不存在）
-    try:
-        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_score_code ON scores(score_code)')
-        conn.commit()
-    except sqlite3.OperationalError as e:
-        print(f"创建唯一索引时出错: {e}")
-        conn.rollback()
-    
+    conn.commit()
     conn.close()
 
 # 初始化数据库
@@ -153,7 +116,7 @@ def check_clipboard():
                         'score_code': current_content,
                         'exists': bool(result),
                         'completion': result[0] if result else None,
-                        'is_favorite': bool(result[1]) if result else False
+                        'is_favorite': result[1] if result else False
                     })
             retry_count = 0  # 重置重试计数
         except Exception as e:
@@ -196,87 +159,50 @@ def get_scores():
 
 @app.route('/api/scores/save', methods=['POST'])
 def save_score():
-    global last_save_time
-    
-    # 检查冷却时间
-    current_time = time.time()
-    if current_time - last_save_time < SAVE_COOLDOWN:
-        return jsonify({'success': False, 'error': '操作太频繁，请稍后再试'}), 429
-    
     try:
-        with save_lock:
-            data = request.get_json()
-            score_code = data.get('score_code')
-            completion = data.get('completion')
+        data = request.get_json()
+        score_code = data.get('score_code')
+        completion = data.get('completion')
+        
+        if not score_code or not is_valid_score_code(score_code):
+            return jsonify({'success': False, 'error': '无效的曲谱码'}), 400
             
-            if not score_code or not is_valid_score_code(score_code):
-                return jsonify({'success': False, 'error': '无效的曲谱码'}), 400
-                
-            if not is_valid_completion(str(completion)):
-                return jsonify({'success': False, 'error': '无效的完成率'}), 400
-            
-            conn = sqlite3.connect('scores.db')
-            c = conn.cursor()
-            
-            # 检查曲谱码是否存在
-            c.execute('SELECT id, is_favorite FROM scores WHERE score_code = ?', (score_code,))
-            existing_record = c.fetchone()
-            
-            if existing_record:
-                # 如果存在，只更新完成率
-                c.execute('''
-                    UPDATE scores 
-                    SET completion = ?, created_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                ''', (completion, existing_record[0]))
-            else:
-                # 如果不存在，创建新记录
-                c.execute('''
-                    INSERT INTO scores (score_code, completion, difficulty, region) 
-                    VALUES (?, ?, 0, 'CN')
-                ''', (score_code, completion))
-            
-            conn.commit()
-            
-            # 查询最新数据
+        if not is_valid_completion(str(completion)):
+            return jsonify({'success': False, 'error': '无效的完成率'}), 400
+        
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        
+        # 检查曲谱码是否存在
+        c.execute('SELECT id FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (score_code,))
+        existing_record = c.fetchone()
+        
+        if existing_record:
+            # 如果存在，更新记录
             c.execute('''
-                SELECT score_code, completion, is_favorite, created_at 
-                FROM scores 
-                ORDER BY created_at DESC
-            ''')
-            scores = c.fetchall()
-            
-            # 获取统计数据
-            c.execute('SELECT COUNT(*) FROM scores')
-            total_records = c.fetchone()[0]
-            
-            c.execute('SELECT COUNT(DISTINCT score_code) FROM scores')
-            unique_songs = c.fetchone()[0]
-            
-            c.execute('SELECT COUNT(DISTINCT score_code) FROM scores WHERE is_favorite = 1')
-            favorite_songs = c.fetchone()[0]
-            
-            conn.close()
-            
-            # 更新最后保存时间
-            last_save_time = current_time
-            
-            # 发送更新到前端
-            socketio.emit('scores_update', {
-                'scores': [{
-                    'score_code': s[0],
-                    'completion': s[1],
-                    'is_favorite': bool(s[2]),
-                    'created_at': s[3]
-                } for s in scores],
-                'stats': {
-                    'total_records': total_records,
-                    'unique_songs': unique_songs,
-                    'favorite_songs': favorite_songs
-                }
-            })
-            
-            return jsonify({'success': True})
+                UPDATE scores 
+                SET completion = ?, created_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (completion, existing_record[0]))
+        else:
+            # 如果不存在，创建新记录
+            c.execute('''
+                INSERT INTO scores (score_code, completion, difficulty, region, created_at) 
+                VALUES (?, ?, 0, 'CN', CURRENT_TIMESTAMP)
+            ''', (score_code, completion))
+        
+        conn.commit()
+        conn.close()
+        
+        # 发送完成率到前端
+        socketio.emit('clipboard_update', {
+            'type': 'completion',
+            'score_code': score_code,
+            'completion': completion,
+            'message': '保存成功'
+        })
+        
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -285,15 +211,14 @@ def toggle_favorite(score_code):
     try:
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
-        
-        # 获取当前记录
-        c.execute('SELECT id, is_favorite, completion FROM scores WHERE score_code = ?', (score_code,))
+        # 获取当前收藏状态
+        c.execute('SELECT is_favorite FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (score_code,))
         result = c.fetchone()
         
         if result:
-            # 如果记录存在，只更新收藏状态
-            new_status = not result[1]
-            c.execute('UPDATE scores SET is_favorite = ? WHERE id = ?', (new_status, result[0]))
+            # 更新收藏状态
+            new_status = not result[0]
+            c.execute('UPDATE scores SET is_favorite = ? WHERE score_code = ?', (new_status, score_code))
             conn.commit()
             conn.close()
             
@@ -348,13 +273,5 @@ def get_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# 添加 favicon 路由
-@app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(os.path.join(app.root_path, 'static'),
-                             'favicon.ico', mimetype='image/vnd.microsoft.icon')
-
 if __name__ == '__main__':
-    # 在启动前备份数据库
-    backup_database()
     socketio.run(app, host='0.0.0.0', port=5005, debug=False) 
