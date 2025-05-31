@@ -7,9 +7,30 @@ import time
 from flask_socketio import SocketIO
 import re
 from datetime import datetime
+import shutil
 
 app = Flask(__name__)
 socketio = SocketIO(app)
+
+def backup_database():
+    """备份数据库文件"""
+    if not os.path.exists('scores.db'):
+        return
+        
+    # 创建backups目录（如果不存在）
+    if not os.path.exists('backups'):
+        os.makedirs('backups')
+    
+    # 生成备份文件名（使用当前时间戳）
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_filename = f'backups/scores_{timestamp}.db'
+    
+    try:
+        # 复制数据库文件
+        shutil.copy2('scores.db', backup_filename)
+        print(f'数据库已备份到: {os.path.abspath(backup_filename)}')
+    except Exception as e:
+        print(f'备份数据库时出错: {e}')
 
 # 数据库初始化
 def init_db():
@@ -274,4 +295,6 @@ def get_stats():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    # 启动时备份数据库
+    backup_database()
     socketio.run(app, host='0.0.0.0', port=5005, debug=False) 
