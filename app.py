@@ -203,8 +203,8 @@ def save_score():
             c.execute('''
                 UPDATE scores 
                 SET completion = ?, created_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            ''', (completion, existing_record[0]))
+                WHERE score_code = ?
+            ''', (completion, score_code))
         else:
             # 如果不存在，创建新记录
             c.execute('''
