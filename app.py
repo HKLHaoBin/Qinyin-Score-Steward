@@ -239,7 +239,7 @@ def toggle_favorite(score_code):
         if result:
             # 更新收藏状态
             new_status = not result[0]
-            c.execute('UPDATE scores SET is_favorite = ? WHERE score_code = ?', (new_status, score_code))
+            c.execute('UPDATE scores SET is_favorite = ?, created_at = CURRENT_TIMESTAMP WHERE score_code = ?', (new_status, score_code))
             conn.commit()
             conn.close()
             
@@ -252,7 +252,10 @@ def toggle_favorite(score_code):
             return jsonify({'success': True, 'is_favorite': new_status})
         else:
             # 如果记录不存在，创建新记录并标记为收藏
-            c.execute('INSERT INTO scores (score_code, completion, difficulty, region, is_favorite) VALUES (?, 0, 0, "CN", 1)', (score_code,))
+            c.execute('''
+                INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, created_at) 
+                VALUES (?, 0, 0, 'CN', 1, CURRENT_TIMESTAMP)
+            ''', (score_code,))
             conn.commit()
             conn.close()
             

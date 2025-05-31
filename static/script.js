@@ -44,17 +44,16 @@ document.addEventListener('DOMContentLoaded', () => {
             messageDisplay.textContent = '';
             saveBtn.disabled = false;
             
-            // 显示收藏按钮
+            // 显示收藏按钮并重置状态
             favoriteBtn.style.display = 'inline-block';
-            favoriteBtn.textContent = data.is_favorite ? '★' : '☆';
-            
-            // 更新状态框样式
             if (data.exists) {
                 statusBox.className = 'status-box exists';
                 document.getElementById('currentCompletion').textContent = data.completion + '%';
                 completionInput.value = data.completion;
+                favoriteBtn.textContent = data.is_favorite ? '★' : '☆';
             } else {
                 statusBox.className = 'status-box not-exists';
+                favoriteBtn.textContent = '☆';  // 新曲谱码时重置为未收藏状态
             }
         } else if (data.type === 'completion') {
             document.getElementById('currentStatus').textContent = '已完成';
