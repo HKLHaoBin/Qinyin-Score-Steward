@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import sqlite3
 import os
 import pyperclip
@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # 数据库初始化
 def init_db():
@@ -211,14 +211,15 @@ def toggle_favorite(score_code):
     try:
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
-        # 获取当前收藏状态
-        c.execute('SELECT is_favorite FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (score_code,))
+        
+        # 获取当前记录
+        c.execute('SELECT id, is_favorite, completion FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (score_code,))
         result = c.fetchone()
         
         if result:
-            # 更新收藏状态
-            new_status = not result[0]
-            c.execute('UPDATE scores SET is_favorite = ? WHERE score_code = ?', (new_status, score_code))
+            # 如果记录存在，只更新收藏状态
+            new_status = not result[1]
+            c.execute('UPDATE scores SET is_favorite = ? WHERE id = ?', (new_status, result[0]))
             conn.commit()
             conn.close()
             
@@ -272,6 +273,12 @@ def get_stats():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# 添加 favicon 路由
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                             'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5005, debug=False) 
