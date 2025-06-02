@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>千音雅集 - 批量查询</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <h1>批量查询曲谱</h1>
+        <div class="nav-links">
+            <a href="/" class="nav-link">返回主页</a>
+        </div>
+        <div class="query-area">
+            <textarea id="scoreCodes" placeholder="请输入包含曲谱码的文本"></textarea>
+            <button id="queryBtn">查询</button>
+        </div>
+        <div class="results-area">
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>曲谱码</th>
+                        <th>完成率</th>
+                        <th>收藏</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody"></tbody>
+            </table>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='batch_query.js') }}"></script>
+</body>
+</html> 

@@ -8,6 +8,9 @@ from flask_socketio import SocketIO
 import re
 from datetime import datetime
 import shutil
+# 获取本机IP地址
+import socket
+import pyperclip
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -97,8 +100,8 @@ last_clipboard_content = ''
 current_score_code = None
 
 def is_valid_score_code(text):
-    """检查是否是有效的曲谱码（纯数字）"""
-    return bool(re.match(r'^\d+$', text))
+    """检查是否是有效的曲谱码（纯数字且长度至少为5位）"""
+    return bool(re.match(r'^\d{5,}$', text))
 
 def is_valid_completion(text):
     """检查是否是有效的完成率（0-100的整数）"""
@@ -297,7 +300,65 @@ def get_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/batch')
+def batch_query():
+    return render_template('batch_query.html')
+
+@app.route('/api/scores/batch', methods=['POST'])
+def batch_query_scores():
+    try:
+        data = request.get_json()
+        score_codes = data.get('score_codes', [])
+        
+        if not score_codes:
+            return jsonify({'success': False, 'error': '未提供曲谱码'}), 400
+            
+        # 验证所有曲谱码都是有效的
+        if not all(is_valid_score_code(code) for code in score_codes):
+            return jsonify({'success': False, 'error': '包含无效的曲谱码'}), 400
+            
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        
+        results = []
+        for score_code in score_codes:
+            c.execute('''
+                SELECT score_code, completion, is_favorite 
+                FROM scores 
+                WHERE score_code = ? 
+                ORDER BY created_at DESC 
+                LIMIT 1
+            ''', (score_code,))
+            result = c.fetchone()
+            
+            if result:
+                results.append({
+                    'score_code': result[0],
+                    'completion': result[1],
+                    'is_favorite': bool(result[2])
+                })
+            else:
+                results.append({
+                    'score_code': score_code,
+                    'completion': None,
+                    'is_favorite': False
+                })
+        
+        conn.close()
+        return jsonify({
+            'success': True, 
+            'results': results,
+            'total': len(score_codes),
+            'found': len([r for r in results if r['completion'] is not None])
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
     # 启动时备份数据库
     backup_database()
-    socketio.run(app, host='0.0.0.0', port=5005, debug=False) 
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    pyperclip.copy(f"http://{local_ip}:5005")
+    print(f"服务器启动在: http://{local_ip}:5005 (已复制到剪贴板)")
+    socketio.run(app, host='0.0.0.0', port=5005, debug=False)
