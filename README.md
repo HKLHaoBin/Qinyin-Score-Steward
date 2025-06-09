@@ -14,7 +14,18 @@
 
 ## 安装说明
 
-### 方法一：直接运行
+### 方法一：使用打包好的exe (Windows)
+
+1. 下载打包好的ZIP文件：
+
+**>[点击蓝链前往下载](https://github.com/HKLHaoBin/Repertoire-of-Myriad-Melodies-Score-Tool/releases/tag/new)<**
+
+2. 运行生成的exe文件：
+- 在 `dist` 目录下找到 `千音雅集.exe`
+- 双击运行即可
+
+
+### 方法二：直接运行 (Windows/Mac/Linux)
 
 1. 安装依赖：
 ```bash
@@ -25,18 +36,6 @@ pip install -r requirements.txt
 ```bash
 python app.py
 ```
-
-### 方法二：使用打包好的exe
-
-1. 打包程序：
-```bash
-pip install -r requirements.txt
-python setup.py
-```
-
-2. 运行生成的exe文件：
-- 在 `dist` 目录下找到 `千音雅集.exe`
-- 双击运行即可
 
 ## 使用说明
 
