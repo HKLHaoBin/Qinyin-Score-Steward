@@ -12,19 +12,35 @@
 - 📈 实时数据同步
 - 🔗 快速访问鉴赏家精选投稿
 
-## 使用说明
+## 安装说明
 
-### 安装依赖
+### 方法一：直接运行
 
+1. 安装依赖：
 ```bash
-pip install flask flask-socketio pyperclip
+pip install -r requirements.txt
 ```
 
-### 运行服务
-
+2. 运行程序：
 ```bash
 python app.py
 ```
+
+### 方法二：使用打包好的exe
+
+1. 打包程序：
+```bash
+pip install -r requirements.txt
+python setup.py
+```
+
+2. 运行生成的exe文件：
+- 在 `dist` 目录下找到 `千音雅集.exe`
+- 双击运行即可
+
+## 使用说明
+
+### 运行服务
 
 运行后，程序会自动复制访问地址到剪贴板。
 
@@ -66,6 +82,7 @@ python app.py
 - SQLite 数据库存储
 - 自动数据库备份
 - 响应式设计，支持移动端
+- 支持打包为独立exe文件
 
 ## 注意事项
 
@@ -73,6 +90,7 @@ python app.py
 2. 程序默认使用 5005 端口
 3. 数据库文件会自动备份到 backups 目录
 4. 曲谱码必须至少为 5 位数字
+5. 使用exe版本时，程序会在同目录下创建数据库和备份文件
 
 ## 更新日志
 
@@ -83,4 +101,5 @@ python app.py
 - 收藏功能
 - 批量查询
 - 实时数据同步
-- 移动端适配 
+- 移动端适配
+- 支持打包为exe 
