@@ -1,5 +1,7 @@
-flask==3.0.2
-flask-socketio==5.3.6
-pyperclip==1.8.2
-keyboard==0.13.5
-pywin32==306
+flask
+flask-socketio
+pyperclip
+pyinstaller
+python-socketio
+python-engineio
+eventlet

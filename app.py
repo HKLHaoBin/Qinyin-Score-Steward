@@ -13,7 +13,7 @@ import socket
 import pyperclip
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode='threading')
 
 def backup_database():
     """备份数据库文件"""
