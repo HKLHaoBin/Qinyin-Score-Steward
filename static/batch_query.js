@@ -3,6 +3,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const queryBtn = document.getElementById('queryBtn');
     const scoreCodesTextarea = document.getElementById('scoreCodes');
     const resultsBody = document.getElementById('resultsBody');
+    const showIncompleteOnlyCheckbox = document.getElementById('showIncompleteOnly');
+    let currentResults = []; // 存储当前查询结果
 
     // 从文本中提取曲谱码
     function extractScoreCodes(text) {
@@ -57,17 +59,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 显示查询结果
     function displayResults(results) {
+        currentResults = results; // 保存当前结果
+        filterAndDisplayResults();
+    }
+
+    // 筛选并显示结果
+    function filterAndDisplayResults() {
         resultsBody.innerHTML = '';
-        results.forEach(result => {
+        const filteredResults = showIncompleteOnlyCheckbox.checked 
+            ? currentResults.filter(result => result.completion === null)
+            : currentResults;
+
+        filteredResults.forEach(result => {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${result.score_code}</td>
                 <td>${result.completion !== null ? result.completion + '%' : '未完成'}</td>
-                <td><span class="favorite-star ${result.is_favorite ? 'favorited' : ''}">${result.is_favorite ? '★' : '☆'}</span></td>
+                <td><span class="favorite-star ${result.is_favorite ? 'favorited' : ''}" data-score-code="${result.score_code}">${result.is_favorite ? '★' : '☆'}</span></td>
             `;
             resultsBody.appendChild(row);
         });
     }
+
+    // 添加复选框变化事件监听
+    showIncompleteOnlyCheckbox.addEventListener('change', filterAndDisplayResults);
 
     // 监听收藏状态更新
     socket.on('favorite_update', function(data) {

@@ -15,7 +15,12 @@
         </div>
         <div class="query-area">
             <textarea id="scoreCodes" placeholder="请输入包含曲谱码的文本"></textarea>
-            <button id="queryBtn">查询</button>
+            <div class="query-controls">
+                <button id="queryBtn">查询</button>
+                <label class="filter-label">
+                    <input type="checkbox" id="showIncompleteOnly"> 仅显示未完成
+                </label>
+            </div>
         </div>
         <div class="results-area">
             <table id="resultsTable">
