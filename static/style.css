@@ -367,23 +367,23 @@ h1 {
 }
 
 .nav-links {
-    text-align: center;
+    display: flex;
+    gap: 15px;
     margin-bottom: 20px;
 }
 
 .nav-link {
     display: inline-block;
     padding: 8px 16px;
-    color: #3498db;
+    background-color: #4a90e2;
+    color: white;
     text-decoration: none;
-    border: 1px solid #3498db;
     border-radius: 4px;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s;
 }
 
 .nav-link:hover {
-    background-color: #3498db;
-    color: white;
+    background-color: #357abd;
 }
 
 .query-controls {
@@ -405,4 +405,11 @@ h1 {
     width: 16px;
     height: 16px;
     cursor: pointer;
+}
+
+.tip-text {
+    margin-top: 10px;
+    color: #666;
+    font-size: 14px;
+    font-style: italic;
 }

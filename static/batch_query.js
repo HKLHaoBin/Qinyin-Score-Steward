@@ -84,6 +84,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // 添加复选框变化事件监听
     showIncompleteOnlyCheckbox.addEventListener('change', filterAndDisplayResults);
 
+    // 监听完成率更新
+    socket.on('clipboard_update', function(data) {
+        if (data.type === 'completion' && currentResults.length > 0) {
+            // 更新当前结果中的完成率
+            const result = currentResults.find(r => r.score_code === data.score_code);
+            if (result) {
+                result.completion = data.completion;
+                filterAndDisplayResults();
+            }
+        }
+    });
+
     // 监听收藏状态更新
     socket.on('favorite_update', function(data) {
         const star = document.querySelector(`.favorite-star[data-score-code="${data.score_code}"]`);
