@@ -18,7 +18,7 @@
 
 1. 下载打包好的ZIP文件：
 
-**>[点击蓝链前往下载](https://github.com/HKLHaoBin/Repertoire-of-Myriad-Melodies-Score-Tool/releases/tag/new)<**
+### >[点击蓝链前往下载](https://github.com/HKLHaoBin/Repertoire-of-Myriad-Melodies-Score-Tool/releases/tag/new)<
 
 2. 运行生成的exe文件：
 - 在 `dist` 目录下找到 `千音雅集.exe`
