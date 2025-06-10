@@ -8,11 +8,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentScoreCodeDisplay = document.getElementById('currentScoreCode');
     const statusBox = document.querySelector('.status-box');
     let currentScoreCode = null;
+    let showFavoritesOnly = false;  // 显示收藏的标志
+    let showScoreCodeOnly = false;  // 仅显示曲谱码的标志
     
     // 创建统计信息显示元素
     const statsDiv = document.createElement('div');
     statsDiv.className = 'stats-info';
     historyList.parentNode.insertBefore(statsDiv, historyList);
+
+    // 创建过滤按钮
+    const filterDiv = document.createElement('div');
+    filterDiv.className = 'filter-controls';
+    filterDiv.innerHTML = `
+        <button id="filterBtn" class="filter-btn">显示所有</button>
+        <button id="scoreCodeFilterBtn" class="filter-btn">显示完整信息</button>
+    `;
+    historyList.parentNode.insertBefore(filterDiv, historyList);
+
+    // 收藏过滤按钮点击事件
+    document.getElementById('filterBtn').addEventListener('click', function() {
+        showFavoritesOnly = !showFavoritesOnly;
+        this.textContent = showFavoritesOnly ? '显示所有' : '仅显示收藏';
+        refreshHistory();
+    });
+
+    // 曲谱码过滤按钮点击事件
+    document.getElementById('scoreCodeFilterBtn').addEventListener('click', function() {
+        showScoreCodeOnly = !showScoreCodeOnly;
+        this.textContent = showScoreCodeOnly ? '显示完整信息' : '仅显示曲谱码';
+        refreshHistory();
+    });
 
     // 更新统计信息
     function updateStats() {
@@ -173,22 +198,34 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(scores => {
                 // 清空现有历史记录
                 historyList.innerHTML = '';
-                // 重新添加所有记录
-                scores.forEach(score => {
-                    const item = document.createElement('div');
-                    item.className = 'history-item';
-                    item.id = `history-${score.score_code}`;
-                    const date = new Date(score.created_at).toLocaleString();
-                    item.innerHTML = `
-                        <div class="history-content">
-                            <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
-                            <div>完成率：<span class="completion">${score.completion}%</span></div>
-                            <div class="timestamp">${date}</div>
-                        </div>
-                        <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>
-                    `;
-                    historyList.appendChild(item);
-                });
+                // 过滤并添加记录
+                scores
+                    .filter(score => !showFavoritesOnly || score.is_favorite)
+                    .forEach(score => {
+                        const item = document.createElement('div');
+                        item.className = 'history-item';
+                        item.id = `history-${score.score_code}`;
+                        const date = new Date(score.created_at).toLocaleString();
+                        
+                        if (showScoreCodeOnly) {
+                            item.innerHTML = `
+                                <div class="history-content">
+                                    <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
+                                </div>
+                                <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>
+                            `;
+                        } else {
+                            item.innerHTML = `
+                                <div class="history-content">
+                                    <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
+                                    <div>完成率：<span class="completion">${score.completion}%</span></div>
+                                    <div class="timestamp">${date}</div>
+                                </div>
+                                <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>
+                            `;
+                        }
+                        historyList.appendChild(item);
+                    });
             });
     }
 
