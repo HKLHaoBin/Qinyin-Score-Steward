@@ -1,4 +1,3 @@
-#目前最健康的版本 可能用于快速回档
 from flask import Flask, render_template, request, jsonify
 import sqlite3
 import os
@@ -12,9 +11,20 @@ import shutil
 # 获取本机IP地址
 import socket
 import pyperclip
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+import json
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
+
+# 全局变量
+chrome_options = None
+driver = None
+jianshang_url = "https://act.miyoushe.com/ys/event/ugc-music-stable/index.html?mhy_presentation_style=fullscreen&mhy_auth_required=true&game_biz=hk4e_cn#/list?key=Button_Jianshang&is_from_button=true"
 
 def backup_database():
     """备份数据库文件"""
@@ -354,6 +364,160 @@ def batch_query_scores():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+def init_chrome():
+    """初始化Chrome浏览器"""
+    global chrome_options, driver
+    if driver is not None:
+        try:
+            driver.quit()
+        except:
+            pass
+    
+    chrome_options = Options()
+    chrome_options.add_argument('--headless=new')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-software-rasterizer')
+    chrome_options.add_argument('--disable-webgl')
+    chrome_options.add_argument('--disable-webgl2')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--disable-logging')
+    chrome_options.add_argument('--log-level=3')
+    chrome_options.add_argument('--silent')
+    chrome_options.add_argument('--disable-gpu-sandbox')
+    chrome_options.add_argument('--disable-setuid-sandbox')
+    chrome_options.add_argument('--disable-accelerated-2d-canvas')
+    chrome_options.add_argument('--disable-accelerated-video-decode')
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    
+    driver = webdriver.Chrome(options=chrome_options)
+    driver.set_page_load_timeout(30)
+    
+    try:
+        driver.get(jianshang_url)
+        time.sleep(5)  # 等待页面加载
+    except Exception as e:
+        print(f"初始化页面加载超时: {str(e)}")
+
+def scroll_to_bottom():
+    """滚动到页面底部"""
+    global driver
+    if driver is None:
+        return False
+        
+    try:
+        last_height = driver.execute_script("return document.body.scrollHeight")
+        scroll_attempts = 0
+        max_scroll_attempts = 100  # 增加最大滚动次数
+        
+        while scroll_attempts < max_scroll_attempts:
+            # 滚动到底部
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)  # 减少等待时间
+            
+            # 检查是否到达底部
+            new_height = driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                # 尝试再次滚动，以防万一
+                time.sleep(0.5)
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                new_height = driver.execute_script("return document.body.scrollHeight")
+                if new_height == last_height:
+                    print("已到达页面底部")
+                    return True
+            last_height = new_height
+            scroll_attempts += 1
+            print(f"滚动进度: {scroll_attempts}/{max_scroll_attempts}")
+            
+        return False
+    except Exception as e:
+        print(f"滚动过程中出现错误: {str(e)}")
+        return False
+
+@app.route('/api/fetch_jianshang', methods=['GET'])
+def fetch_jianshang():
+    try:
+        global driver
+        
+        # 确保浏览器已初始化
+        if driver is None:
+            init_chrome()
+        
+        # 先滚动到页面底部
+        if not scroll_to_bottom():
+            return jsonify({
+                'success': False,
+                'error': '滚动到页面底部失败'
+            }), 500
+        
+        # 一次性获取所有内容
+        try:
+            page_text = driver.find_element(By.TAG_NAME, "body").text
+            numbers = re.findall(r'\b\d{5,}\b', page_text)
+            score_codes = list(set(numbers))  # 去重
+            
+            if not score_codes:
+                print("未找到任何曲谱码")
+                return jsonify({
+                    'success': False,
+                    'error': '未找到任何曲谱码'
+                }), 404
+            
+            print(f"共找到 {len(score_codes)} 个曲谱码")
+            
+            # 批量查询这些曲谱码
+            conn = sqlite3.connect('scores.db')
+            c = conn.cursor()
+            
+            results = []
+            for score_code in score_codes:
+                c.execute('''
+                    SELECT score_code, completion, is_favorite 
+                    FROM scores 
+                    WHERE score_code = ? 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                ''', (score_code,))
+                result = c.fetchone()
+                
+                if result:
+                    results.append({
+                        'score_code': result[0],
+                        'completion': result[1],
+                        'is_favorite': bool(result[2])
+                    })
+                else:
+                    results.append({
+                        'score_code': score_code,
+                        'completion': None,
+                        'is_favorite': False
+                    })
+            
+            conn.close()
+            
+            return jsonify({
+                'success': True,
+                'results': results,
+                'total': len(score_codes),
+                'found': len([r for r in results if r['completion'] is not None])
+            })
+            
+        except Exception as e:
+            print(f"获取内容时出现错误: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+            
+    except Exception as e:
+        print(f"发生错误: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# 在应用启动时初始化Chrome
+init_chrome()
 
 if __name__ == '__main__':
     # 启动时备份数据库
