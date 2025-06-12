@@ -25,6 +25,7 @@ socketio = SocketIO(app, async_mode='threading')
 chrome_options = None
 driver = None
 jianshang_url = "https://act.miyoushe.com/ys/event/ugc-music-stable/index.html?mhy_presentation_style=fullscreen&mhy_auth_required=true&game_biz=hk4e_cn#/list?key=Button_Jianshang&is_from_button=true"
+chrome_initialized = False  # 添加初始化状态标志
 
 def backup_database():
     """备份数据库文件"""
@@ -367,7 +368,7 @@ def batch_query_scores():
 
 def init_chrome():
     """初始化Chrome浏览器"""
-    global chrome_options, driver
+    global chrome_options, driver, chrome_initialized
     if driver is not None:
         try:
             driver.quit()
@@ -392,14 +393,27 @@ def init_chrome():
     chrome_options.add_argument('--disable-accelerated-video-decode')
     chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
     
-    driver = webdriver.Chrome(options=chrome_options)
-    driver.set_page_load_timeout(30)
-    
     try:
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.set_page_load_timeout(30)
         driver.get(jianshang_url)
         time.sleep(5)  # 等待页面加载
+        print("Chrome浏览器初始化成功")
+        chrome_initialized = True  # 设置初始化成功标志
     except Exception as e:
-        print(f"初始化页面加载超时: {str(e)}")
+        print(f"Chrome浏览器初始化失败: {str(e)}")
+        driver = None
+        chrome_initialized = False  # 设置初始化失败标志
+
+def init_chrome_async():
+    """异步初始化Chrome浏览器"""
+    def init():
+        time.sleep(5)  # 等待服务器完全启动
+        init_chrome()
+    
+    thread = threading.Thread(target=init)
+    thread.daemon = True
+    thread.start()
 
 def scroll_to_bottom():
     """滚动到页面底部"""
@@ -440,11 +454,32 @@ def scroll_to_bottom():
 @app.route('/api/fetch_jianshang', methods=['GET'])
 def fetch_jianshang():
     try:
-        global driver
+        global driver, chrome_initialized
+        
+        # 检查Chrome是否初始化完成
+        if not chrome_initialized:
+            # 尝试重新初始化
+            retry_count = 0
+            max_retries = 5
+            while retry_count < max_retries and not chrome_initialized:
+                print(f"Chrome未初始化，尝试重新初始化 ({retry_count + 1}/{max_retries})")
+                init_chrome()
+                retry_count += 1
+                if not chrome_initialized:
+                    time.sleep(2)  # 等待2秒后重试
+            
+            if not chrome_initialized:
+                return jsonify({
+                    'success': False,
+                    'error': 'Chrome浏览器初始化失败，请稍后重试'
+                }), 503  # 使用503表示服务暂时不可用
         
         # 确保浏览器已初始化
         if driver is None:
-            init_chrome()
+            return jsonify({
+                'success': False,
+                'error': 'Chrome浏览器未就绪，请稍后重试'
+            }), 503
         
         # 先滚动到页面底部
         if not scroll_to_bottom():
@@ -516,14 +551,36 @@ def fetch_jianshang():
         print(f"发生错误: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# 在应用启动时初始化Chrome
-init_chrome()
-
-if __name__ == '__main__':
-    # 启动时备份数据库
-    backup_database()
+def start_server():
+    """启动Flask服务器"""
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     pyperclip.copy(f"http://{local_ip}:5005")
     print(f"服务器启动在: http://{local_ip}:5005 (已复制到剪贴板)")
     socketio.run(app, host='0.0.0.0', port=5005, debug=False)
+
+if __name__ == '__main__':
+    # 启动时备份数据库
+    backup_database()
+    
+    # 创建并启动服务器线程
+    server_thread = threading.Thread(target=start_server)
+    server_thread.daemon = True
+    server_thread.start()
+    
+    # 创建并启动Chrome初始化线程
+    chrome_thread = threading.Thread(target=init_chrome)
+    chrome_thread.daemon = True
+    chrome_thread.start()
+    
+    # 保持主线程运行
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n程序正在退出...")
+        if driver is not None:
+            try:
+                driver.quit()
+            except:
+                pass
