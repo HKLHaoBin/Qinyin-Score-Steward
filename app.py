@@ -177,21 +177,52 @@ def index():
 
 @app.route('/api/scores', methods=['GET'])
 def get_scores():
-    conn = sqlite3.connect('scores.db')
-    c = conn.cursor()
-    c.execute('''
+    try:
+        # 获取筛选参数
+        min_completion = request.args.get('min_completion', type=int)
+        max_completion = request.args.get('max_completion', type=int)
+        favorite_filter = request.args.get('favorite', type=int)  # 0: 全部, 1: 收藏, 2: 未收藏
+        
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        
+        # 构建查询条件
+        conditions = []
+        params = []
+        
+        if min_completion is not None:
+            conditions.append('completion >= ?')
+            params.append(min_completion)
+        if max_completion is not None:
+            conditions.append('completion <= ?')
+            params.append(max_completion)
+        if favorite_filter is not None:
+            if favorite_filter == 1:
+                conditions.append('is_favorite = 1')
+            elif favorite_filter == 2:
+                conditions.append('is_favorite = 0')
+        
+        # 构建SQL查询
+        query = '''
         SELECT score_code, completion, is_favorite, created_at 
         FROM scores 
-        ORDER BY created_at DESC
-    ''')
-    scores = c.fetchall()
-    conn.close()
-    return jsonify([{
-        'score_code': s[0],
-        'completion': s[1],
-        'is_favorite': bool(s[2]),
-        'created_at': s[3]
-    } for s in scores])
+        '''
+        if conditions:
+            query += ' WHERE ' + ' AND '.join(conditions)
+        query += ' ORDER BY created_at DESC'
+        
+        c.execute(query, params)
+        scores = c.fetchall()
+        conn.close()
+        
+        return jsonify([{
+            'score_code': s[0],
+            'completion': s[1],
+            'is_favorite': bool(s[2]),
+            'created_at': s[3]
+        } for s in scores])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/scores/save', methods=['POST'])
 def save_score():
@@ -488,64 +519,76 @@ def fetch_jianshang():
                 'error': '滚动到页面底部失败'
             }), 500
         
-        # 一次性获取所有内容
-        try:
-            page_text = driver.find_element(By.TAG_NAME, "body").text
-            numbers = re.findall(r'\b\d{5,}\b', page_text)
-            score_codes = list(set(numbers))  # 去重
-            
-            if not score_codes:
-                print("未找到任何曲谱码")
-                return jsonify({
-                    'success': False,
-                    'error': '未找到任何曲谱码'
-                }), 404
-            
-            print(f"共找到 {len(score_codes)} 个曲谱码")
-            
-            # 批量查询这些曲谱码
-            conn = sqlite3.connect('scores.db')
-            c = conn.cursor()
-            
-            results = []
-            for score_code in score_codes:
-                c.execute('''
-                    SELECT score_code, completion, is_favorite 
-                    FROM scores 
-                    WHERE score_code = ? 
-                    ORDER BY created_at DESC 
-                    LIMIT 1
-                ''', (score_code,))
-                result = c.fetchone()
+        # 获取曲谱码的重试机制
+        retry_count = 0
+        max_retries = 5
+        score_codes = []
+        
+        while retry_count < max_retries:
+            try:
+                page_text = driver.find_element(By.TAG_NAME, "body").text
+                numbers = re.findall(r'\b\d{5,}\b', page_text)
+                score_codes = list(set(numbers))  # 去重
                 
-                if result:
-                    results.append({
-                        'score_code': result[0],
-                        'completion': result[1],
-                        'is_favorite': bool(result[2])
-                    })
+                if score_codes:
+                    print(f"共找到 {len(score_codes)} 个曲谱码")
+                    break
                 else:
-                    results.append({
-                        'score_code': score_code,
-                        'completion': None,
-                        'is_favorite': False
-                    })
-            
-            conn.close()
-            
-            return jsonify({
-                'success': True,
-                'results': results,
-                'total': len(score_codes),
-                'found': len([r for r in results if r['completion'] is not None])
-            })
-            
-        except Exception as e:
-            print(f"获取内容时出现错误: {str(e)}")
+                    print(f"未找到任何曲谱码，尝试重试 ({retry_count + 1}/{max_retries})")
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        time.sleep(1)  # 等待1秒后重试
+                        # 重新滚动到底部
+                        scroll_to_bottom()
+            except Exception as e:
+                print(f"获取内容时出现错误: {str(e)}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    time.sleep(1)
+                    continue
+        
+        if not score_codes:
             return jsonify({
                 'success': False,
-                'error': str(e)
-            }), 500
+                'error': '多次尝试后仍未找到任何曲谱码'
+            }), 404
+        
+        # 批量查询这些曲谱码
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        
+        results = []
+        for score_code in score_codes:
+            c.execute('''
+                SELECT score_code, completion, is_favorite 
+                FROM scores 
+                WHERE score_code = ? 
+                ORDER BY created_at DESC 
+                LIMIT 1
+            ''', (score_code,))
+            result = c.fetchone()
+            
+            if result:
+                results.append({
+                    'score_code': result[0],
+                    'completion': result[1],
+                    'is_favorite': bool(result[2])
+                })
+            else:
+                results.append({
+                    'score_code': score_code,
+                    'completion': None,
+                    'is_favorite': False
+                })
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'results': results,
+            'total': len(score_codes),
+            'found': len([r for r in results if r['completion'] is not None])
+        })
             
     except Exception as e:
         print(f"发生错误: {str(e)}")

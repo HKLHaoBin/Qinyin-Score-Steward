@@ -30,8 +30,23 @@
                 <thead>
                     <tr>
                         <th>曲谱码</th>
-                        <th>完成率</th>
-                        <th>收藏</th>
+                        <th class="completion-header">
+                            完成率
+                            <div class="completion-filter">
+                                <div class="range-inputs">
+                                    <input type="number" id="minCompletion" placeholder="最小" min="0" max="100">
+                                    <span class="range-separator">-</span>
+                                    <input type="number" id="maxCompletion" placeholder="最大" min="0" max="100">
+                                </div>
+                                <button id="applyCompletionFilter">应用</button>
+                            </div>
+                        </th>
+                        <th class="favorite-header">
+                            收藏
+                            <div class="favorite-filter">
+                                <button id="favoriteFilterBtn">全部</button>
+                            </div>
+                        </th>
                     </tr>
                 </thead>
                 <tbody id="resultsBody"></tbody>
