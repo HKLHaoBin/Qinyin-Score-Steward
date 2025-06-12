@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const scoreCodesTextarea = document.getElementById('scoreCodes');
     const resultsBody = document.getElementById('resultsBody');
     const showIncompleteOnlyCheckbox = document.getElementById('showIncompleteOnly');
+    const fetchJianshangBtn = document.getElementById('fetchJianshangBtn');
     let currentResults = []; // 存储当前查询结果
 
     // 从文本中提取曲谱码
@@ -102,6 +103,49 @@ document.addEventListener('DOMContentLoaded', function() {
         if (star) {
             star.classList.toggle('favorited', data.is_favorite);
             star.textContent = data.is_favorite ? '★' : '☆';
+        }
+    });
+
+    fetchJianshangBtn.addEventListener('click', async function() {
+        try {
+            fetchJianshangBtn.disabled = true;
+            fetchJianshangBtn.textContent = '正在获取...';
+            
+            const response = await fetch('/api/fetch_jianshang');
+            const data = await response.json();
+            
+            if (data.success) {
+                // 清空当前结果
+                resultsBody.innerHTML = '';
+                
+                // 显示新结果
+                data.results.forEach(result => {
+                    if (!showIncompleteOnlyCheckbox.checked || result.completion === null || result.completion < 100) {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${result.score_code}</td>
+                            <td>${result.completion !== null ? result.completion + '%' : '未完成'}</td>
+                            <td>
+                                <button class="favorite-btn ${result.is_favorite ? 'favorited' : ''}" 
+                                        onclick="toggleFavorite('${result.score_code}')">
+                                    ${result.is_favorite ? '★' : '☆'}
+                                </button>
+                            </td>
+                        `;
+                        resultsBody.appendChild(row);
+                    }
+                });
+                
+                // 更新输入框
+                scoreCodesTextarea.value = data.results.map(r => r.score_code).join('\n');
+            } else {
+                alert('获取鉴赏谱失败：' + data.error);
+            }
+        } catch (error) {
+            alert('获取鉴赏谱时发生错误：' + error.message);
+        } finally {
+            fetchJianshangBtn.disabled = false;
+            fetchJianshangBtn.textContent = '获取鉴赏谱';
         }
     });
 }); 

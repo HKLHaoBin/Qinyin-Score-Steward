@@ -1,5 +1,6 @@
 flask
 flask-socketio
+selenium
 pyperclip
 pyinstaller
 python-socketio
