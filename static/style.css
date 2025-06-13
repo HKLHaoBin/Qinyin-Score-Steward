@@ -348,36 +348,47 @@ h1 {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    margin-top: 15px;
+    margin-top: 25px;
     background: white;
-    border-radius: 6px;
+    border-radius: 10px;
     overflow: hidden;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
 }
 
 #resultsTable th {
-    background-color: #f8f9fa;
-    padding: 8px 12px;
+    background-color: #eef1f5;
+    padding: 15px 20px;
     text-align: left;
-    font-weight: 600;
-    color: #333;
-    border-bottom: 2px solid #dee2e6;
-    font-size: 13px;
+    font-weight: 700;
+    color: #555;
+    border-bottom: 2px solid #e0e0e0;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 #resultsTable td {
-    padding: 8px 12px;
-    border-bottom: 1px solid #dee2e6;
-    color: #444;
-    font-size: 13px;
+    padding: 12px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #666;
+    font-size: 14px;
 }
 
 #resultsTable tr:last-child td {
     border-bottom: none;
 }
 
+#resultsTable tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
 #resultsTable tr:hover td {
-    background-color: #f8f9fa;
+    background-color: #eef7ff;
+    cursor: pointer;
+}
+
+#resultsTable td:nth-child(3) {
+    text-align: center;
 }
 
 .nav-links {
