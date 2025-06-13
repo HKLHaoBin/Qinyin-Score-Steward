@@ -38,10 +38,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 查询按钮点击事件
     queryBtn.addEventListener('click', () => {
-        const scoreCodes = scoreCodesTextarea.value.trim();
-        if (scoreCodes) {
+        const rawScoreCodes = scoreCodesTextarea.value.trim();
+        if (rawScoreCodes) {
             // 如果有输入内容，执行批量查询
-            const codes = scoreCodes.split(/[\n,，\s]+/).filter(code => code.trim());
+            const codes = extractScoreCodes(rawScoreCodes); // 使用 extractScoreCodes 进行验证和提取
+            if (codes.length === 0) {
+                showToast('未找到有效的曲谱码');
+                return;
+            }
             fetch('/api/scores/batch', {
                 method: 'POST',
                 headers: {
