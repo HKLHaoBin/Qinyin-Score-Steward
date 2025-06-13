@@ -439,11 +439,13 @@ h1 {
 }
 
 #fetchJianshangBtn {
-    background: linear-gradient(145deg, #2ecc71, #27ae60);
+    background: linear-gradient(145deg, #007bff, #0056b3);
+    min-width: unset;
+    width: auto;
 }
 
 #fetchJianshangBtn:hover {
-    background: linear-gradient(145deg, #27ae60, #2ecc71);
+    background: linear-gradient(145deg, #0056b3, #007bff);
 }
 
 /* 移动端适配 */
