@@ -194,9 +194,65 @@ document.addEventListener('DOMContentLoaded', () => {
     // 添加复选框变化事件监听
     showIncompleteOnlyCheckbox.addEventListener('change', filterAndDisplayResults);
 
+    // 剪贴板更新（来自主页的完成率保存）
+    socket.on('clipboard_update', function(data) {
+        // 只有当类型是 'completion' 并且有 score_code 时才触发更新
+        if (data.type === 'completion' && data.score_code) {
+            // 如果输入框有内容，则重新查询输入框中的曲谱
+            const rawScoreCodes = scoreCodesTextarea.value.trim();
+            if (rawScoreCodes) {
+                const codes = extractScoreCodes(rawScoreCodes);
+                if (codes.length > 0) {
+                    fetch('/api/scores/batch', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ score_codes: codes })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            displayResults(data.results);
+                        }
+                    })
+                    .catch(error => console.error('Error refreshing batch query on clipboard update:', error));
+                } else {
+                    refreshResults(); // 输入框无有效码，刷新所有
+                }
+            } else {
+                refreshResults(); // 输入框为空，刷新所有
+            }
+        }
+    });
+
     // 收藏状态更新
     socket.on('favorite_update', function(data) {
-        refreshResults();
+        // 重新查询以反映收藏状态的变化
+        const rawScoreCodes = scoreCodesTextarea.value.trim();
+        if (rawScoreCodes) {
+            const codes = extractScoreCodes(rawScoreCodes);
+            if (codes.length > 0) {
+                fetch('/api/scores/batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ score_codes: codes })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayResults(data.results);
+                    }
+                })
+                .catch(error => console.error('Error refreshing batch query on favorite update:', error));
+            } else {
+                refreshResults(); // 输入框无有效码，刷新所有
+            }
+        } else {
+            refreshResults(); // 输入框为空，刷新所有
+        }
     });
 
     // 鉴赏谱获取按钮点击事件
