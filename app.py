@@ -428,19 +428,40 @@ def init_chrome():
         driver = webdriver.Chrome(options=chrome_options)
         driver.set_page_load_timeout(30)
         driver.get(jianshang_url)
-        time.sleep(5)  # 等待页面加载
+        
+        # 等待页面加载完成
+        wait = WebDriverWait(driver, 20)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        
         print("Chrome浏览器初始化成功")
-        chrome_initialized = True  # 设置初始化成功标志
+        chrome_initialized = True
+        return True
     except Exception as e:
         print(f"Chrome浏览器初始化失败: {str(e)}")
+        if driver is not None:
+            try:
+                driver.quit()
+            except:
+                pass
         driver = None
-        chrome_initialized = False  # 设置初始化失败标志
+        chrome_initialized = False
+        return False
 
 def init_chrome_async():
     """异步初始化Chrome浏览器"""
     def init():
         time.sleep(5)  # 等待服务器完全启动
-        init_chrome()
+        retry_count = 0
+        max_retries = 5
+        retry_delay = 2  # 重试延迟（秒）
+        
+        while retry_count < max_retries:
+            if init_chrome():
+                break
+            retry_count += 1
+            if retry_count < max_retries:
+                print(f"Chrome初始化失败，{retry_delay}秒后重试 ({retry_count}/{max_retries})")
+                time.sleep(retry_delay)
     
     thread = threading.Thread(target=init)
     thread.daemon = True
@@ -612,9 +633,7 @@ if __name__ == '__main__':
     server_thread.start()
     
     # 创建并启动Chrome初始化线程
-    chrome_thread = threading.Thread(target=init_chrome)
-    chrome_thread.daemon = True
-    chrome_thread.start()
+    init_chrome_async()
     
     # 保持主线程运行
     try:
@@ -627,3 +646,4 @@ if __name__ == '__main__':
                 driver.quit()
             except:
                 pass
+        print("Chrome浏览器已关闭")
