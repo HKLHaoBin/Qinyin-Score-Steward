@@ -347,7 +347,8 @@ def get_stats():
 
 @app.route('/batch')
 def batch_query():
-    return render_template('batch_query.html')
+    global chrome_initialized
+    return render_template('batch_query.html', initial_chrome_initialized=chrome_initialized)
 
 @app.route('/api/scores/batch', methods=['POST'])
 def batch_query_scores():
