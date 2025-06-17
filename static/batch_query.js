@@ -275,15 +275,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 随机复制按钮点击事件
     randomCopyBtn.addEventListener('click', () => {
+        console.log('随机复制按钮被点击！');
         if (filteredResults.length > 0) {
             const randomIndex = Math.floor(Math.random() * filteredResults.length);
             const randomScoreCode = filteredResults[randomIndex].score_code;
-            navigator.clipboard.writeText(randomScoreCode).then(() => {
+            // 使用兼容性更好的复制方法
+            const tempInput = document.createElement('textarea');
+            tempInput.value = randomScoreCode;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            try {
+                document.execCommand('copy');
                 showToast(`已复制: ${randomScoreCode}`);
-            }).catch(err => {
+            } catch (err) {
                 console.error('复制失败:', err);
                 showToast('复制失败，请手动复制');
-            });
+            } finally {
+                document.body.removeChild(tempInput);
+            }
         } else {
             showToast('没有可供复制的曲谱码');
         }
