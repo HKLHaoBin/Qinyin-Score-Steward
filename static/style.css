@@ -697,3 +697,10 @@ h1 {
         padding: 6px 8px;
     }
 }
+
+.nav-link.disabled-look {
+    background-color: #535353;
+    cursor: not-allowed;
+    color: #ffffff;
+    border-color: #4b4b4b;
+}

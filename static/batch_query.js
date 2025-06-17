@@ -7,6 +7,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const fetchJianshangBtn = document.getElementById('fetchJianshangBtn');
     const favoriteFilterBtn = document.getElementById('favoriteFilterBtn');
     
+    let isChromeInitialized = false; // 初始状态为未初始化
+
+    // 初始设置按钮样式和文本
+    fetchJianshangBtn.classList.add('disabled-look');
+    fetchJianshangBtn.textContent = '获取鉴赏谱 (初始化中)';
+
     let currentResults = []; // 存储当前查询结果
     let currentFilters = {
         minCompletion: null,
@@ -257,8 +263,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 鉴赏谱获取按钮点击事件
     fetchJianshangBtn.addEventListener('click', async function() {
+        // 如果Chrome未初始化完成，则弹出提示并阻止后续操作
+        if (!isChromeInitialized) {
+            showToast('该功能初始化未完成，可能需要较长时间。');
+            return;
+        }
+
         try {
-            fetchJianshangBtn.disabled = true;
+            fetchJianshangBtn.disabled = true; // 临时禁用，防止重复点击
             fetchJianshangBtn.textContent = '正在获取...';
             
             const response = await fetch('/api/fetch_jianshang');
@@ -275,8 +287,25 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             showToast('获取鉴赏谱时发生错误：' + error.message);
         } finally {
-            fetchJianshangBtn.disabled = false;
+            // 只有当初始化成功时，才在获取鉴赏谱后恢复按钮状态
+            if (fetchJianshangBtn.dataset.initialized === 'true') {
+                fetchJianshangBtn.disabled = false;
+                fetchJianshangBtn.textContent = '获取鉴赏谱';
+            }
+        }
+    });
+
+    // 监听Chrome初始化状态
+    socket.on('chrome_init_status', function(data) {
+        isChromeInitialized = data.success; // 更新初始化状态
+        if (data.success) {
             fetchJianshangBtn.textContent = '获取鉴赏谱';
+            fetchJianshangBtn.classList.remove('disabled-look'); // 移除禁用样式
+            showToast(data.message);
+        } else {
+            fetchJianshangBtn.textContent = '获取鉴赏谱 (初始化失败)';
+            fetchJianshangBtn.classList.add('disabled-look'); // 添加禁用样式
+            showToast(data.message + '，可能需要较长时间，请稍后重试。');
         }
     });
 
