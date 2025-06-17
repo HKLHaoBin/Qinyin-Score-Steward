@@ -16,7 +16,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 import json
+from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
@@ -424,8 +426,13 @@ def init_chrome():
     chrome_options.add_argument('--disable-accelerated-video-decode')
     chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
     
+    print("Chrome Options:")
+    for arg in chrome_options.arguments:
+        print(f"  {arg}")
+    
     try:
-        driver = webdriver.Chrome(options=chrome_options)
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(options=chrome_options, service=service)
         driver.set_page_load_timeout(30)
         driver.get(jianshang_url)
         
@@ -437,7 +444,9 @@ def init_chrome():
         chrome_initialized = True
         return True
     except Exception as e:
-        print(f"Chrome浏览器初始化失败: {str(e)}")
+        print(f"Chrome浏览器初始化失败: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
         if driver is not None:
             try:
                 driver.quit()
