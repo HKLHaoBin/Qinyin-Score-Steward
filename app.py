@@ -442,6 +442,7 @@ def init_chrome():
         
         print("Chrome浏览器初始化成功")
         chrome_initialized = True
+        socketio.emit('chrome_init_status', {'success': True, 'message': 'Chrome浏览器初始化成功'})
         return True
     except Exception as e:
         print(f"Chrome浏览器初始化失败: {type(e).__name__} - {e}")
@@ -454,6 +455,7 @@ def init_chrome():
                 pass
         driver = None
         chrome_initialized = False
+        socketio.emit('chrome_init_status', {'success': False, 'message': 'Chrome浏览器初始化失败'})
         return False
 
 def init_chrome_async():
