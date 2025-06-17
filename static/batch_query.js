@@ -6,14 +6,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const showIncompleteOnlyCheckbox = document.getElementById('showIncompleteOnly');
     const fetchJianshangBtn = document.getElementById('fetchJianshangBtn');
     const favoriteFilterBtn = document.getElementById('favoriteFilterBtn');
+    const randomCopyBtn = document.getElementById('randomCopyBtn');
+    const initialChromeInitializedElement = document.getElementById('initialChromeInitialized');
     
     let isChromeInitialized = false; // 初始状态为未初始化
 
     // 初始设置按钮样式和文本
-    fetchJianshangBtn.classList.add('disabled-look');
-    fetchJianshangBtn.textContent = '获取鉴赏谱 (初始化中)';
+    if (initialChromeInitializedElement) {
+        isChromeInitialized = JSON.parse(initialChromeInitializedElement.value); // 从隐藏字段获取初始状态
+    }
+
+    if (isChromeInitialized) {
+        fetchJianshangBtn.classList.remove('disabled-look');
+        fetchJianshangBtn.textContent = '获取鉴赏谱';
+    } else {
+        fetchJianshangBtn.classList.add('disabled-look');
+        fetchJianshangBtn.textContent = '获取鉴赏谱 (初始化中)';
+    }
 
     let currentResults = []; // 存储当前查询结果
+    let filteredResults = []; // 存储当前筛选后的结果
     let currentFilters = {
         minCompletion: null,
         maxCompletion: null,
@@ -154,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 筛选并显示结果
     function filterAndDisplayResults() {
         resultsBody.innerHTML = '';
-        const filteredResults = showIncompleteOnlyCheckbox.checked 
+        filteredResults = showIncompleteOnlyCheckbox.checked 
             ? currentResults.filter(result => result.completion === null)
             : currentResults;
 
@@ -258,6 +270,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             refreshResults(); // 输入框为空，刷新所有
+        }
+    });
+
+    // 随机复制按钮点击事件
+    randomCopyBtn.addEventListener('click', () => {
+        if (filteredResults.length > 0) {
+            const randomIndex = Math.floor(Math.random() * filteredResults.length);
+            const randomScoreCode = filteredResults[randomIndex].score_code;
+            navigator.clipboard.writeText(randomScoreCode).then(() => {
+                showToast(`已复制: ${randomScoreCode}`);
+            }).catch(err => {
+                console.error('复制失败:', err);
+                showToast('复制失败，请手动复制');
+            });
+        } else {
+            showToast('没有可供复制的曲谱码');
         }
     });
 
