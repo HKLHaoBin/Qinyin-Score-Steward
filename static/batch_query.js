@@ -278,7 +278,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('随机复制按钮被点击！');
         if (filteredResults.length > 0) {
             const randomIndex = Math.floor(Math.random() * filteredResults.length);
-            const randomScoreCode = filteredResults[randomIndex].score_code;
+            const randomScore = filteredResults[randomIndex];
+            const randomScoreCode = randomScore.score_code;
             // 使用兼容性更好的复制方法
             const tempInput = document.createElement('textarea');
             tempInput.value = randomScoreCode;
@@ -287,6 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 document.execCommand('copy');
                 showToast(`已复制: ${randomScoreCode}`);
+                updateRandomCopyCard(randomScore);
             } catch (err) {
                 console.error('复制失败:', err);
                 showToast('复制失败，请手动复制');
@@ -297,6 +299,70 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('没有可供复制的曲谱码');
         }
     });
+
+    // 卡片渲染和事件绑定
+    function updateRandomCopyCard(scoreObj) {
+        const randomCopyInfo = document.getElementById('randomCopyInfo');
+        const completionText = scoreObj.completion !== null ? `${scoreObj.completion}%` : '未完成';
+        const favoriteIcon = scoreObj.is_favorite ? '★' : '☆';
+        randomCopyInfo.innerHTML = `
+          <div class="random-info-card">
+            <div class="score-code-row">
+              <span class="score-code">${scoreObj.score_code}</span>
+              <span class="favorite-icon" style="cursor:pointer;">${favoriteIcon}</span>
+            </div>
+            <div class="completion-row">
+              完成率：<span class="completion-badge" style="cursor:pointer;">${completionText}</span>
+            </div>
+          </div>
+        `;
+        // 绑定完成率编辑事件
+        randomCopyInfo.querySelector('.completion-badge').onclick = async function() {
+            const newValue = prompt('请输入新的完成率（0-100）', scoreObj.completion !== null ? scoreObj.completion : '');
+            if (newValue === null) return;
+            const num = parseInt(newValue);
+            if (isNaN(num) || num < 0 || num > 100) {
+                showToast('请输入0-100之间的数字');
+                return;
+            }
+            // 提交到后端（适配 /api/scores/save）
+            try {
+                const resp = await fetch('/api/scores/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ score_code: scoreObj.score_code, completion: num })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    scoreObj.completion = num;
+                    updateRandomCopyCard(scoreObj);
+                    showToast('完成率已更新');
+                } else {
+                    showToast('更新失败');
+                }
+            } catch (e) {
+                showToast('网络错误，更新失败');
+            }
+        };
+        // 绑定收藏切换事件（适配 /api/scores/{score_code}/favorite）
+        randomCopyInfo.querySelector('.favorite-icon').onclick = async function() {
+            try {
+                const resp = await fetch(`/api/scores/${scoreObj.score_code}/favorite`, {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    scoreObj.is_favorite = !scoreObj.is_favorite;
+                    updateRandomCopyCard(scoreObj);
+                    showToast(scoreObj.is_favorite ? '已收藏' : '已取消收藏');
+                } else {
+                    showToast('操作失败');
+                }
+            } catch (e) {
+                showToast('网络错误，操作失败');
+            }
+        };
+    }
 
     // 鉴赏谱获取按钮点击事件
     fetchJianshangBtn.addEventListener('click', async function() {
