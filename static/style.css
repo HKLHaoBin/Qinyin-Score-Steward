@@ -314,29 +314,75 @@ h1 {
     gap: 10px;
 }
 
-#scoreCodes {
+.query-flex-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
     width: 100%;
-    height: 150px;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+}
+
+.query-flex-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+}
+
+.input-block {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px;
+    width: 100%;
+}
+.input-block textarea,
+.input-block button {
+    width: 100% !important;
+    box-sizing: border-box;
+}
+#queryBtn, #excludeBtn {
+    display: block !important;
+    margin: 0 !important;
+}
+
+.input-block textarea {
+    width: 100%;
+    min-height: 80px;
     resize: vertical;
-    font-family: monospace;
+}
+
+.input-block button {
+    width: 100%;
+    height: 40px;
+    font-size: 16px;
+}
+
+#scoreCodes {
+    min-height: 150px;
 }
 
 #queryBtn {
-    padding: 10px 20px;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 16px;
-    align-self: flex-start;
+    height: 48px;
+    min-height: 48px;
+    font-size: 18px;
+    width: 100%;
+    margin-bottom: 10px;
 }
 
-#queryBtn:hover {
-    background-color: #45a049;
+.exclude-block {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+#excludeCodes {
+    height: 80px;
+    resize: vertical;
+}
+
+#excludeBtn {
+    width: 100%;
+    height: 36px;
+    font-size: 16px;
 }
 
 .results-area {
@@ -517,6 +563,26 @@ h1 {
 
     .filter-label {
         justify-content: center;
+    }
+
+    .query-flex-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+    .query-side {
+        max-width: 100%;
+        min-width: 0;
+    }
+    #queryBtn, #excludeBtn {
+        width: 100%;
+    }
+
+    .query-flex-col {
+        gap: 10px;
+    }
+    .input-block button {
+        height: 38px;
+        font-size: 15px;
     }
 }
 
@@ -747,4 +813,86 @@ h1 {
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px);}
     to { opacity: 1; transform: translateY(0);}
+}
+
+.query-flex-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+.input-row, .button-row {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    width: 100%;
+    align-items: stretch;
+}
+.input-row textarea {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 100px;
+    height: 150px;
+    resize: vertical;
+}
+.button-row button {
+    flex: 1 1 0;
+    height: 48px;
+    font-size: 16px;
+    width: 100%;
+}
+@media (max-width: 768px) {
+    .input-row, .button-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+    .button-row button {
+        height: 38px;
+        font-size: 15px;
+    }
+    .input-row textarea {
+        height: 100px;
+        min-height: 80px;
+    }
+}
+
+.query-textarea {
+    height: 150px !important;
+    min-height: 150px !important;
+    max-height: 150px !important;
+    box-sizing: border-box;
+    overflow-y: auto;
+    resize: none;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1.5;
+    padding: 12px;
+}
+.query-btn {
+    flex: 1 1 0;
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+    font-size: 16px;
+    width: 100%;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    box-sizing: border-box;
+}
+.query-btn:hover {
+    background-color: #2980b9;
+}
+@media (max-width: 768px) {
+    .query-textarea {
+        height: 100px;
+        min-height: 80px;
+    }
+    .query-btn {
+        height: 38px;
+        font-size: 15px;
+    }
 }
