@@ -355,6 +355,7 @@ def batch_query_scores():
     try:
         data = request.get_json()
         score_codes = data.get('score_codes', [])
+        exclude_codes = data.get('exclude_codes', [])
         
         if not score_codes:
             return jsonify({'success': False, 'error': '未提供曲谱码'}), 400
@@ -362,39 +363,54 @@ def batch_query_scores():
         # 验证所有曲谱码都是有效的
         if not all(is_valid_score_code(code) for code in score_codes):
             return jsonify({'success': False, 'error': '包含无效的曲谱码'}), 400
-            
+        
+        # 过滤掉需要排除的曲谱码（即使有交集也自动排除）
+        filtered_codes = [code for code in score_codes if code not in exclude_codes]
+        if not filtered_codes:
+            return jsonify({'success': True, 'results': [], 'total': 0, 'found': 0})
+        
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
         
+        # 用IN和NOT IN批量查找
+        placeholders = ','.join(['?'] * len(filtered_codes))
+        sql = f'''
+            SELECT score_code, completion, is_favorite
+            FROM scores
+            WHERE score_code IN ({placeholders})
+            AND score_code NOT IN ({','.join(['?'] * len(exclude_codes))})
+            GROUP BY score_code
+            ORDER BY MAX(created_at) DESC
+        ''' if exclude_codes else f'''
+            SELECT score_code, completion, is_favorite
+            FROM scores
+            WHERE score_code IN ({placeholders})
+            GROUP BY score_code
+            ORDER BY MAX(created_at) DESC
+        '''
+        params = filtered_codes + exclude_codes if exclude_codes else filtered_codes
+        c.execute(sql, params)
+        db_results = {row[0]: row for row in c.fetchall()}
         results = []
-        for score_code in score_codes:
-            c.execute('''
-                SELECT score_code, completion, is_favorite 
-                FROM scores 
-                WHERE score_code = ? 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            ''', (score_code,))
-            result = c.fetchone()
-            
-            if result:
+        for code in filtered_codes:
+            if code in db_results:
+                row = db_results[code]
                 results.append({
-                    'score_code': result[0],
-                    'completion': result[1],
-                    'is_favorite': bool(result[2])
+                    'score_code': row[0],
+                    'completion': row[1],
+                    'is_favorite': bool(row[2])
                 })
             else:
                 results.append({
-                    'score_code': score_code,
+                    'score_code': code,
                     'completion': None,
                     'is_favorite': False
                 })
-        
         conn.close()
         return jsonify({
-            'success': True, 
+            'success': True,
             'results': results,
-            'total': len(score_codes),
+            'total': len(filtered_codes),
             'found': len([r for r in results if r['completion'] is not None])
         })
     except Exception as e:
@@ -645,7 +661,7 @@ if __name__ == '__main__':
     server_thread.start()
     
     # 创建并启动Chrome初始化线程
-    #init_chrome_async()
+    init_chrome_async()
     
     # 保持主线程运行
     try:
