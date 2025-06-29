@@ -645,7 +645,7 @@ if __name__ == '__main__':
     server_thread.start()
     
     # 创建并启动Chrome初始化线程
-    init_chrome_async()
+    #init_chrome_async()
     
     # 保持主线程运行
     try:

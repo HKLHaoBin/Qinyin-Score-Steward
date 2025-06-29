@@ -17,20 +17,26 @@
             <button id="fetchJianshangBtn" class="nav-link">获取鉴赏谱 (初始化中)</button>
         </div>
         <div class="query-area">
-            <textarea id="scoreCodes" placeholder="请输入包含曲谱码的文本"></textarea>
-            <div class="query-controls">
-                <button id="queryBtn">查询</button>
-                <label class="filter-label">
-                    <input type="checkbox" id="showIncompleteOnly"> 仅显示未完成
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" id="hideCompletion"> 隐藏完成率
-                </label>
-                <label class="filter-label">
-                    <input type="checkbox" id="hideFavorite"> 隐藏收藏
-                </label>
+            <div class="query-flex-grid">
+                <div class="input-row"> 
+                    <textarea class="query-textarea" id="scoreCodes" placeholder="请输入包含曲谱码的文本"></textarea>
+                    <textarea class="query-textarea" id="excludeCodes" placeholder="请输入包含曲谱码的文本"></textarea>
+                </div>
+                <div class="button-row">
+                    <button class="query-btn" id="queryBtn">查询</button>
+                    <button class="query-btn" id="excludeBtn">排除</button>
+                </div>
             </div>
             <div class="tip-text">提示：在主页录入的完成率会实时更新到此处</div>
+            <label class="filter-label">
+                <input type="checkbox" id="showIncompleteOnly"> 仅显示未完成
+            </label>
+            <label class="filter-label">
+                <input type="checkbox" id="hideCompletion"> 隐藏完成率
+            </label>
+            <label class="filter-label">
+                <input type="checkbox" id="hideFavorite"> 隐藏收藏
+            </label>
             <button id="randomCopyBtn">随机复制</button>
             <div id="randomCopyInfo"></div>
         </div>

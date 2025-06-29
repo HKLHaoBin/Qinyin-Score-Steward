@@ -10,8 +10,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialChromeInitializedElement = document.getElementById('initialChromeInitialized');
     const hideCompletionCheckbox = document.getElementById('hideCompletion');
     const hideFavoriteCheckbox = document.getElementById('hideFavorite');
+    const excludeCodesTextarea = document.getElementById('excludeCodes');
+    const excludeBtn = document.getElementById('excludeBtn');
     
     let isChromeInitialized = false; // 初始状态为未初始化
+    let excludeList = [];
 
     // 初始设置按钮样式和文本
     if (initialChromeInitializedElement) {
@@ -131,6 +134,13 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshResults();
     });
 
+    // 排除按钮点击事件
+    excludeBtn.addEventListener('click', () => {
+        const rawExcludeCodes = excludeCodesTextarea.value.trim();
+        excludeList = rawExcludeCodes ? extractScoreCodes(rawExcludeCodes) : [];
+        filterAndDisplayResults();
+    });
+
     // 刷新结果
     function refreshResults() {
         const params = new URLSearchParams();
@@ -171,6 +181,10 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredResults = showIncompleteOnlyCheckbox.checked 
             ? currentResults.filter(result => result.completion === null)
             : currentResults;
+        // 排除功能：过滤掉在excludeList中的曲谱码
+        if (excludeList.length > 0) {
+            filteredResults = filteredResults.filter(result => !excludeList.includes(result.score_code));
+        }
 
         // 控制表头和表格列的显示
         const completionHeader = document.querySelector('.completion-header');
