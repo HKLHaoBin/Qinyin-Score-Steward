@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const favoriteFilterBtn = document.getElementById('favoriteFilterBtn');
     const randomCopyBtn = document.getElementById('randomCopyBtn');
     const initialChromeInitializedElement = document.getElementById('initialChromeInitialized');
+    const hideCompletionCheckbox = document.getElementById('hideCompletion');
+    const hideFavoriteCheckbox = document.getElementById('hideFavorite');
     
     let isChromeInitialized = false; // 初始状态为未初始化
 
@@ -170,22 +172,40 @@ document.addEventListener('DOMContentLoaded', () => {
             ? currentResults.filter(result => result.completion === null)
             : currentResults;
 
+        // 控制表头和表格列的显示
+        const completionHeader = document.querySelector('.completion-header');
+        const favoriteHeader = document.querySelector('.favorite-header');
+        if (hideCompletionCheckbox.checked) {
+            completionHeader.style.display = 'none';
+        } else {
+            completionHeader.style.display = '';
+        }
+        if (hideFavoriteCheckbox.checked) {
+            favoriteHeader.style.display = 'none';
+        } else {
+            favoriteHeader.style.display = '';
+        }
+
+        // 统计显示的列数
+        let colCount = 1;
+        if (!hideCompletionCheckbox.checked) colCount++;
+        if (!hideFavoriteCheckbox.checked) colCount++;
+
         if (filteredResults.length === 0) {
-            resultsBody.innerHTML = '<tr><td colspan="3" class="no-results">没有找到符合条件的记录</td></tr>';
+            resultsBody.innerHTML = `<tr><td colspan="${colCount}" class="no-results">没有找到符合条件的记录</td></tr>`;
             return;
         }
 
         filteredResults.forEach(result => {
             const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${result.score_code}</td>
-                <td>${result.completion !== null ? result.completion + '%' : '-'}</td>
-                <td>
-                    <button class="favorite-btn" onclick="toggleFavorite('${result.score_code}')">
-                        ${result.is_favorite ? '★' : '☆'}
-                    </button>
-                </td>
-            `;
+            let rowHtml = `<td>${result.score_code}</td>`;
+            if (!hideCompletionCheckbox.checked) {
+                rowHtml += `<td>${result.completion !== null ? result.completion + '%' : '-'}</td>`;
+            }
+            if (!hideFavoriteCheckbox.checked) {
+                rowHtml += `<td><button class="favorite-btn" onclick="toggleFavorite('${result.score_code}')">${result.is_favorite ? '★' : '☆'}</button></td>`;
+            }
+            row.innerHTML = rowHtml;
             resultsBody.appendChild(row);
         });
     }
@@ -211,6 +231,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 添加复选框变化事件监听
     showIncompleteOnlyCheckbox.addEventListener('change', filterAndDisplayResults);
+    hideCompletionCheckbox.addEventListener('change', filterAndDisplayResults);
+    hideFavoriteCheckbox.addEventListener('change', filterAndDisplayResults);
 
     // 剪贴板更新（来自主页的完成率保存）
     socket.on('clipboard_update', function(data) {
