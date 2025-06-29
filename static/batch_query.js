@@ -59,22 +59,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(scoreCodes);
     }
 
-    // 查询按钮点击事件
-    queryBtn.addEventListener('click', () => {
+    // 查询和排除统一的查询行为
+    function doQuery() {
         const rawScoreCodes = scoreCodesTextarea.value.trim();
+        const rawExcludeCodes = excludeCodesTextarea.value.trim();
         if (rawScoreCodes) {
-            // 如果有输入内容，执行批量查询
-            const codes = extractScoreCodes(rawScoreCodes); // 使用 extractScoreCodes 进行验证和提取
+            const codes = extractScoreCodes(rawScoreCodes);
+            const excludeCodes = rawExcludeCodes ? extractScoreCodes(rawExcludeCodes) : [];
             if (codes.length === 0) {
                 showToast('未找到有效的曲谱码');
                 return;
             }
             fetch('/api/scores/batch', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ score_codes: codes })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ score_codes: codes, exclude_codes: excludeCodes })
             })
             .then(response => response.json())
             .then(data => {
@@ -89,10 +88,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('查询失败');
             });
         } else {
-            // 如果输入框为空，显示所有历史记录
             refreshResults();
         }
-    });
+    }
+    queryBtn.addEventListener('click', doQuery);
+    excludeBtn.addEventListener('click', doQuery);
 
     // 完成率筛选
     const completionHeader = document.querySelector('.completion-header');
@@ -132,13 +132,6 @@ document.addEventListener('DOMContentLoaded', () => {
         favoriteFilterBtn.textContent = states[currentFilters.favorite];
         favoriteFilterBtn.classList.toggle('active', currentFilters.favorite !== 0);
         refreshResults();
-    });
-
-    // 排除按钮点击事件
-    excludeBtn.addEventListener('click', () => {
-        const rawExcludeCodes = excludeCodesTextarea.value.trim();
-        excludeList = rawExcludeCodes ? extractScoreCodes(rawExcludeCodes) : [];
-        filterAndDisplayResults();
     });
 
     // 刷新结果
@@ -181,10 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredResults = showIncompleteOnlyCheckbox.checked 
             ? currentResults.filter(result => result.completion === null)
             : currentResults;
-        // 排除功能：过滤掉在excludeList中的曲谱码
-        if (excludeList.length > 0) {
-            filteredResults = filteredResults.filter(result => !excludeList.includes(result.score_code));
-        }
+        // 后端已排除，无需前端再排除
 
         // 控制表头和表格列的显示
         const completionHeader = document.querySelector('.completion-header');
