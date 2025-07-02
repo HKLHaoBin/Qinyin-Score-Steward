@@ -73,7 +73,13 @@ document.addEventListener('DOMContentLoaded', () => {
             fetch('/api/scores/batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ score_codes: codes, exclude_codes: excludeCodes })
+                body: JSON.stringify({ 
+                    score_codes: codes, 
+                    exclude_codes: excludeCodes,
+                    min_completion: currentFilters.minCompletion,
+                    max_completion: currentFilters.maxCompletion,
+                    favorite: currentFilters.favorite
+                })
             })
             .then(response => response.json())
             .then(data => {
@@ -121,7 +127,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         currentFilters.minCompletion = minCompletion.value ? min : null;
         currentFilters.maxCompletion = maxCompletion.value ? max : null;
-        refreshResults();
+        // 判断输入框内容
+        if (scoreCodesTextarea.value.trim()) {
+            doQuery();
+        } else {
+            refreshResults();
+        }
     });
 
     // 收藏筛选
@@ -131,7 +142,12 @@ document.addEventListener('DOMContentLoaded', () => {
         currentFilters.favorite = (currentState + 1) % 3;
         favoriteFilterBtn.textContent = states[currentFilters.favorite];
         favoriteFilterBtn.classList.toggle('active', currentFilters.favorite !== 0);
-        refreshResults();
+        // 判断输入框内容
+        if (scoreCodesTextarea.value.trim()) {
+            doQuery();
+        } else {
+            refreshResults();
+        }
     });
 
     // 刷新结果
@@ -245,25 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 如果输入框有内容，则重新查询输入框中的曲谱
             const rawScoreCodes = scoreCodesTextarea.value.trim();
             if (rawScoreCodes) {
-                const codes = extractScoreCodes(rawScoreCodes);
-                if (codes.length > 0) {
-                    fetch('/api/scores/batch', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ score_codes: codes })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            displayResults(data.results);
-                        }
-                    })
-                    .catch(error => console.error('Error refreshing batch query on clipboard update:', error));
-                } else {
-                    refreshResults(); // 输入框无有效码，刷新所有
-                }
+                doQuery();
             } else {
                 refreshResults(); // 输入框为空，刷新所有
             }
@@ -275,25 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 重新查询以反映收藏状态的变化
         const rawScoreCodes = scoreCodesTextarea.value.trim();
         if (rawScoreCodes) {
-            const codes = extractScoreCodes(rawScoreCodes);
-            if (codes.length > 0) {
-                fetch('/api/scores/batch', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ score_codes: codes })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        displayResults(data.results);
-                    }
-                })
-                .catch(error => console.error('Error refreshing batch query on favorite update:', error));
-            } else {
-                refreshResults(); // 输入框无有效码，刷新所有
-            }
+            doQuery();
         } else {
             refreshResults(); // 输入框为空，刷新所有
         }
