@@ -20,15 +20,15 @@
 
 ## 方法一：使用打包好的exe (Windows)
 
-1. 下载打包好的ZIP文件：
+1. 下载打包好exe的ZIP文件：
 
 # >[点击蓝链前往下载](https://github.com/HKLHaoBin/Repertoire-of-Myriad-Melodies-Score-Tool/releases/tag/v2.6)<
 
-2. 运行生成的exe文件：
+2. 运行其中的exe文件：
 - 在 `dist` 目录下找到 `千音雅集.exe`
 - 双击运行即可
 
-## 方法二：直接运行 (Windows/Mac/Linux)
+## 方法二：源码运行 (Windows/Mac/Linux)
 
 ### 我默认选择这个方法的各位有Python环境，没有Python环境的各位请选择方法1。
 
