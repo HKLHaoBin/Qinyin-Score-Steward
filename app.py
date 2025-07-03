@@ -360,6 +360,10 @@ def batch_query_scores():
         max_completion = data.get('max_completion')
         favorite = data.get('favorite')
 
+        # 调试打印参数
+        #print("score_codes:", score_codes)
+        #print("exclude_codes:", exclude_codes)
+#
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
 
@@ -672,7 +676,7 @@ if __name__ == '__main__':
     server_thread.start()
     
     # 创建并启动Chrome初始化线程
-    #init_chrome_async()
+    init_chrome_async()
     
     # 保持主线程运行
     try:
