@@ -359,69 +359,69 @@ def batch_query_scores():
         min_completion = data.get('min_completion')
         max_completion = data.get('max_completion')
         favorite = data.get('favorite')
-        
+
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+
+        # 如果 score_codes 为空，则查所有曲谱码
         if not score_codes:
+            c.execute("SELECT DISTINCT score_code FROM scores")
+            score_codes = [row[0] for row in c.fetchall()]
+
+        if not score_codes:
+            conn.close()
             return jsonify({'success': False, 'error': '未提供曲谱码'}), 400
-            
+
         # 验证所有曲谱码都是有效的
         if not all(is_valid_score_code(code) for code in score_codes):
             return jsonify({'success': False, 'error': '包含无效的曲谱码'}), 400
-        
-        # 过滤掉需要排除的曲谱码（即使有交集也自动排除）
-        filtered_codes = [code for code in score_codes if code not in exclude_codes]
-        if not filtered_codes:
-            return jsonify({'success': True, 'results': [], 'total': 0, 'found': 0})
-        
-        conn = sqlite3.connect('scores.db')
-        c = conn.cursor()
-        
-        # 构建SQL条件
-        conditions = []
-        params = []
-        if filtered_codes:
-            conditions.append(f"score_code IN ({','.join(['?'] * len(filtered_codes))})")
-            params.extend(filtered_codes)
-        if exclude_codes:
-            conditions.append(f"score_code NOT IN ({','.join(['?'] * len(exclude_codes))})")
-            params.extend(exclude_codes)
-        if min_completion is not None:
-            conditions.append("completion >= ?")
-            params.append(min_completion)
-        if max_completion is not None:
-            conditions.append("completion <= ?")
-            params.append(max_completion)
-        if favorite is not None:
-            try:
-                favorite = int(favorite)
-                if favorite == 1:
-                    conditions.append("is_favorite = 1")
-                elif favorite == 2:
-                    conditions.append("is_favorite = 0")
-            except:
-                pass
-        
-        sql = f'''
-            SELECT score_code, completion, is_favorite
-            FROM scores
-            {'WHERE ' + ' AND '.join(conditions) if conditions else ''}
-            GROUP BY score_code
-            ORDER BY MAX(created_at) DESC
-        '''
-        c.execute(sql, params)
+
+        # 只查所有 score_codes
+        c.execute(
+            f"SELECT score_code, completion, is_favorite FROM scores WHERE score_code IN ({','.join(['?']*len(score_codes))}) GROUP BY score_code ORDER BY MAX(created_at) DESC",
+            score_codes
+        )
         db_results = {row[0]: row for row in c.fetchall()}
+        conn.close()
+
+        # 先排除 exclude_codes
         results = []
-        # 只返回查到的、符合条件的码
-        for code, row in db_results.items():
+        for code in score_codes:
+            if code in exclude_codes:
+                continue
+            row = db_results.get(code)
+            if not row:
+                # 数据库没有的曲谱码也要返回（如 completion=None, is_favorite=False）
+                results.append({'score_code': code, 'completion': None, 'is_favorite': False})
+                continue
             results.append({
                 'score_code': row[0],
                 'completion': row[1],
                 'is_favorite': bool(row[2])
             })
-        conn.close()
+
+        # 排除后打印结果
+        print("results after exclude:", [r['score_code'] for r in results])
+
+        # 再根据完成率/收藏筛选
+        if min_completion is not None:
+            results = [r for r in results if r['completion'] is not None and r['completion'] >= min_completion]
+        if max_completion is not None:
+            results = [r for r in results if r['completion'] is not None and r['completion'] <= max_completion]
+        if favorite is not None:
+            try:
+                favorite = int(favorite)
+                if favorite == 1:
+                    results = [r for r in results if r['is_favorite']]
+                elif favorite == 2:
+                    results = [r for r in results if not r['is_favorite']]
+            except:
+                pass
+
         return jsonify({
             'success': True,
             'results': results,
-            'total': len(filtered_codes),
+            'total': len(score_codes),
             'found': len(results)
         })
     except Exception as e:
@@ -672,7 +672,7 @@ if __name__ == '__main__':
     server_thread.start()
     
     # 创建并启动Chrome初始化线程
-    init_chrome_async()
+    #init_chrome_async()
     
     # 保持主线程运行
     try:

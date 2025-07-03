@@ -63,13 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function doQuery() {
         const rawScoreCodes = scoreCodesTextarea.value.trim();
         const rawExcludeCodes = excludeCodesTextarea.value.trim();
-        if (rawScoreCodes) {
-            const codes = extractScoreCodes(rawScoreCodes);
-            const excludeCodes = rawExcludeCodes ? extractScoreCodes(rawExcludeCodes) : [];
-            if (codes.length === 0) {
-                showToast('未找到有效的曲谱码');
-                return;
-            }
+        const codes = rawScoreCodes ? extractScoreCodes(rawScoreCodes) : [];
+        const excludeCodes = rawExcludeCodes ? extractScoreCodes(rawExcludeCodes) : [];
+        // 只要有"曲谱码"或"排除"有内容，就用 batch 查询
+        if (codes.length > 0 || excludeCodes.length > 0) {
             fetch('/api/scores/batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -94,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('查询失败');
             });
         } else {
-            refreshResults();
+            refreshResults(); // 全部无内容时才全量
         }
     }
     queryBtn.addEventListener('click', doQuery);
