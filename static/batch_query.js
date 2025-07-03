@@ -228,6 +228,12 @@ document.addEventListener('DOMContentLoaded', () => {
             row.innerHTML = rowHtml;
             resultsBody.appendChild(row);
         });
+
+        // 更新曲谱数量显示
+        const scoreCountSpan = document.getElementById('scoreCount');
+        if (scoreCountSpan) {
+            scoreCountSpan.textContent = `（共${filteredResults.length}个）`;
+        }
     }
 
     // 显示提示信息
