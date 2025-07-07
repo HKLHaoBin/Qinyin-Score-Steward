@@ -14,6 +14,7 @@
         <div class="nav-links">
             <a href="/" class="nav-link">返回主页</a>
             <a href="https://act.miyoushe.com/ys/event/ugc-music-stable/index.html?mhy_presentation_style=fullscreen&mhy_auth_required=true&game_biz=hk4e_cn#/list?key=Button_Jianshang&is_from_button=true" class="nav-link" target="_blank">鉴赏家精选投稿</a>
+            <a href="/random_pool" class="nav-link">随机池</a>
             <button id="fetchJianshangBtn" class="nav-link">获取鉴赏谱 (初始化中)</button>
         </div>
         <div class="query-area">
@@ -38,6 +39,7 @@
                 <input type="checkbox" id="hideFavorite"> 隐藏收藏
             </label>
             <button id="randomCopyBtn">随机复制</button>
+            <button id="createPoolFromBatchBtn">创建池</button>
             <div id="randomCopyInfo"></div>
         </div>
         <div class="results-area">
@@ -70,5 +72,32 @@
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="{{ url_for('static', filename='batch_query.js') }}"></script>
+    <script>
+    document.getElementById('createPoolFromBatchBtn').onclick = function() {
+        // 获取当前筛选条件
+        const minCompletion = document.getElementById('minCompletion').value;
+        const maxCompletion = document.getElementById('maxCompletion').value;
+        const favorite = document.getElementById('favoriteFilterBtn') ? document.getElementById('favoriteFilterBtn').dataset.state : null;
+        // 获取当前曲谱码
+        const codes = [];
+        const resultsBody = document.getElementById('resultsBody');
+        for (const row of resultsBody.querySelectorAll('tr')) {
+            const codeCell = row.querySelector('td');
+            if (codeCell && codeCell.textContent && /^\d{5,}$/.test(codeCell.textContent.trim())) {
+                codes.push(codeCell.textContent.trim());
+            }
+        }
+        // 构造数据
+        const filter = {};
+        if (minCompletion) filter.min_completion = parseInt(minCompletion);
+        if (maxCompletion) filter.max_completion = parseInt(maxCompletion);
+        if (favorite) filter.favorite = parseInt(favorite);
+        // 存到localStorage
+        localStorage.setItem('batch_pool_filter', JSON.stringify(filter));
+        localStorage.setItem('batch_pool_codes', JSON.stringify(codes));
+        // 跳转
+        window.location.href = '/random_pool';
+    };
+    </script>
 </body>
 </html> 
