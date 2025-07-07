@@ -103,13 +103,18 @@ def init_db():
         # 如果不存在，添加 created_at 列
         c.execute('ALTER TABLE scores ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
     
-    # 新建随机池表
+    # 新建随机池表，升级支持origin_codes_json
+    try:
+        c.execute('ALTER TABLE random_pools ADD COLUMN origin_codes_json TEXT')
+    except Exception:
+        pass
     c.execute('''
         CREATE TABLE IF NOT EXISTS random_pools (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             filter_json TEXT NOT NULL,
             codes_json TEXT NOT NULL,
+            origin_codes_json TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -687,15 +692,15 @@ def create_random_pool():
         name = data.get('name')
         filter_obj = data.get('filter')  # dict
         codes = data.get('codes')
-        if not name or not filter_obj:
-            return jsonify({'success': False, 'error': '池名和筛选条件不能为空'}), 400
+        if not name:
+            return jsonify({'success': False, 'error': '池名不能为空'}), 400
+        if filter_obj is None:
+            filter_obj = {}
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
         if codes is not None:
-            # 前端自定义池内容优先
             codes = [c_ for c_ in codes if isinstance(c_, str) and c_.isdigit() and len(c_) >= 5]
         else:
-            # 用筛选条件查出曲谱码
             min_completion = filter_obj.get('min_completion')
             max_completion = filter_obj.get('max_completion')
             favorite = filter_obj.get('favorite')
@@ -717,9 +722,9 @@ def create_random_pool():
                 query += ' WHERE ' + ' AND '.join(conditions)
             c.execute(query, params)
             codes = [row[0] for row in c.fetchall()]
-        # 存入random_pools表
-        c.execute('INSERT INTO random_pools (name, filter_json, codes_json) VALUES (?, ?, ?)',
-                  (name, json.dumps(filter_obj, ensure_ascii=False), json.dumps(codes, ensure_ascii=False)))
+        # 存入random_pools表，origin_codes_json也写入
+        c.execute('INSERT INTO random_pools (name, filter_json, codes_json, origin_codes_json) VALUES (?, ?, ?, ?)',
+                  (name, json.dumps(filter_obj, ensure_ascii=False), json.dumps(codes, ensure_ascii=False), json.dumps(codes, ensure_ascii=False)))
         pool_id = c.lastrowid
         conn.commit()
         conn.close()
@@ -764,7 +769,7 @@ def random_from_pool(pool_id):
         import random
         idx = random.randint(0, len(codes)-1)
         code = codes.pop(idx)
-        # 更新池
+        # 只在这里更新codes_json
         c.execute('UPDATE random_pools SET codes_json = ? WHERE id = ?', (json.dumps(codes, ensure_ascii=False), pool_id))
         conn.commit()
         conn.close()
@@ -789,23 +794,33 @@ def filter_pool(pool_id):
     try:
         data = request.get_json()
         filter_obj = data.get('filter')
-        if not filter_obj:
-            return jsonify({'success': False, 'error': '筛选条件不能为空'}), 400
+        codes_override = data.get('codes')
+        if filter_obj is None:
+            filter_obj = {}
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
-        c.execute('SELECT codes_json FROM random_pools WHERE id = ?', (pool_id,))
+        c.execute('SELECT origin_codes_json FROM random_pools WHERE id = ?', (pool_id,))
         row = c.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': '池不存在'}), 404
-        codes = json.loads(row[0])
-        # 用新条件筛选codes
+        origin_codes = json.loads(row[0])
+        # 支持前端传codes（如排除/查询），否则用origin_codes
+        codes = codes_override if codes_override is not None else origin_codes
         min_completion = filter_obj.get('min_completion')
         max_completion = filter_obj.get('max_completion')
         favorite = filter_obj.get('favorite')
         if not codes:
+            c.execute('UPDATE random_pools SET codes_json = ? WHERE id = ?', (json.dumps([]), pool_id))
+            conn.commit()
             conn.close()
             return jsonify({'success': True, 'codes': []})
+        # 如果筛选条件全空，恢复为origin_codes
+        if not min_completion and not max_completion and not favorite and codes_override is None:
+            c.execute('UPDATE random_pools SET codes_json = ? WHERE id = ?', (json.dumps(origin_codes), pool_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'codes': origin_codes})
         placeholders = ','.join(['?']*len(codes))
         query = f'SELECT score_code, completion, is_favorite FROM scores WHERE score_code IN ({placeholders})'
         conditions = []
@@ -825,11 +840,28 @@ def filter_pool(pool_id):
             query += ' AND ' + ' AND '.join(conditions)
         c.execute(query, params)
         filtered = [row[0] for row in c.fetchall()]
-        # 更新池
         c.execute('UPDATE random_pools SET codes_json = ? WHERE id = ?', (json.dumps(filtered, ensure_ascii=False), pool_id))
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'codes': filtered})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/random_pool/<int:pool_id>/reset', methods=['POST'])
+def reset_pool(pool_id):
+    try:
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        c.execute('SELECT origin_codes_json FROM random_pools WHERE id = ?', (pool_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': '池不存在'}), 404
+        origin_codes = row[0]
+        c.execute('UPDATE random_pools SET codes_json = ? WHERE id = ?', (origin_codes, pool_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
