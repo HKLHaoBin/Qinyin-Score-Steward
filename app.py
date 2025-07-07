@@ -103,6 +103,17 @@ def init_db():
         # 如果不存在，添加 created_at 列
         c.execute('ALTER TABLE scores ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
     
+    # 新建随机池表
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS random_pools (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            filter_json TEXT NOT NULL,
+            codes_json TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -666,6 +677,166 @@ def start_server():
     print(f"服务器启动在: http://{local_ip}:5005 (已复制到剪贴板)")
     socketio.run(app, host='0.0.0.0', port=5005, debug=False)
 
+# ========== 随机池相关API ==========
+from flask import abort
+
+@app.route('/api/random_pool/create', methods=['POST'])
+def create_random_pool():
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        filter_obj = data.get('filter')  # dict
+        codes = data.get('codes')
+        if not name or not filter_obj:
+            return jsonify({'success': False, 'error': '池名和筛选条件不能为空'}), 400
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        if codes is not None:
+            # 前端自定义池内容优先
+            codes = [c_ for c_ in codes if isinstance(c_, str) and c_.isdigit() and len(c_) >= 5]
+        else:
+            # 用筛选条件查出曲谱码
+            min_completion = filter_obj.get('min_completion')
+            max_completion = filter_obj.get('max_completion')
+            favorite = filter_obj.get('favorite')
+            conditions = []
+            params = []
+            if min_completion is not None:
+                conditions.append('completion >= ?')
+                params.append(min_completion)
+            if max_completion is not None:
+                conditions.append('completion <= ?')
+                params.append(max_completion)
+            if favorite is not None:
+                if favorite == 1:
+                    conditions.append('is_favorite = 1')
+                elif favorite == 2:
+                    conditions.append('is_favorite = 0')
+            query = 'SELECT DISTINCT score_code FROM scores'
+            if conditions:
+                query += ' WHERE ' + ' AND '.join(conditions)
+            c.execute(query, params)
+            codes = [row[0] for row in c.fetchall()]
+        # 存入random_pools表
+        c.execute('INSERT INTO random_pools (name, filter_json, codes_json) VALUES (?, ?, ?)',
+                  (name, json.dumps(filter_obj, ensure_ascii=False), json.dumps(codes, ensure_ascii=False)))
+        pool_id = c.lastrowid
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'id': pool_id, 'name': name, 'filter': filter_obj, 'codes': codes})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/random_pool/list', methods=['GET'])
+def list_random_pools():
+    try:
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        c.execute('SELECT id, name, filter_json, codes_json, created_at FROM random_pools ORDER BY created_at DESC')
+        pools = [
+            {
+                'id': row[0],
+                'name': row[1],
+                'filter': json.loads(row[2]),
+                'codes': json.loads(row[3]),
+                'created_at': row[4]
+            } for row in c.fetchall()
+        ]
+        conn.close()
+        return jsonify({'success': True, 'pools': pools})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/random_pool/<int:pool_id>/random', methods=['POST'])
+def random_from_pool(pool_id):
+    try:
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        c.execute('SELECT codes_json FROM random_pools WHERE id = ?', (pool_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': '池不存在'}), 404
+        codes = json.loads(row[0])
+        if not codes:
+            conn.close()
+            return jsonify({'success': False, 'error': '池已空'}), 400
+        import random
+        idx = random.randint(0, len(codes)-1)
+        code = codes.pop(idx)
+        # 更新池
+        c.execute('UPDATE random_pools SET codes_json = ? WHERE id = ?', (json.dumps(codes, ensure_ascii=False), pool_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'code': code, 'remain': len(codes)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/random_pool/<int:pool_id>/delete', methods=['POST'])
+def delete_pool(pool_id):
+    try:
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        c.execute('DELETE FROM random_pools WHERE id = ?', (pool_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/random_pool/<int:pool_id>/filter', methods=['POST'])
+def filter_pool(pool_id):
+    try:
+        data = request.get_json()
+        filter_obj = data.get('filter')
+        if not filter_obj:
+            return jsonify({'success': False, 'error': '筛选条件不能为空'}), 400
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        c.execute('SELECT codes_json FROM random_pools WHERE id = ?', (pool_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': '池不存在'}), 404
+        codes = json.loads(row[0])
+        # 用新条件筛选codes
+        min_completion = filter_obj.get('min_completion')
+        max_completion = filter_obj.get('max_completion')
+        favorite = filter_obj.get('favorite')
+        if not codes:
+            conn.close()
+            return jsonify({'success': True, 'codes': []})
+        placeholders = ','.join(['?']*len(codes))
+        query = f'SELECT score_code, completion, is_favorite FROM scores WHERE score_code IN ({placeholders})'
+        conditions = []
+        params = codes[:]
+        if min_completion is not None:
+            conditions.append('completion >= ?')
+            params.append(min_completion)
+        if max_completion is not None:
+            conditions.append('completion <= ?')
+            params.append(max_completion)
+        if favorite is not None:
+            if favorite == 1:
+                conditions.append('is_favorite = 1')
+            elif favorite == 2:
+                conditions.append('is_favorite = 0')
+        if conditions:
+            query += ' AND ' + ' AND '.join(conditions)
+        c.execute(query, params)
+        filtered = [row[0] for row in c.fetchall()]
+        # 更新池
+        c.execute('UPDATE random_pools SET codes_json = ? WHERE id = ?', (json.dumps(filtered, ensure_ascii=False), pool_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'codes': filtered})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/random_pool')
+def random_pool():
+    return render_template('random_pool.html')
+
 if __name__ == '__main__':
     # 启动时备份数据库
     backup_database()
@@ -676,7 +847,7 @@ if __name__ == '__main__':
     server_thread.start()
     
     # 创建并启动Chrome初始化线程
-    init_chrome_async()
+    #init_chrome_async()
     
     # 保持主线程运行
     try:

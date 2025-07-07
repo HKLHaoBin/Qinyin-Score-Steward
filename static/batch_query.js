@@ -283,10 +283,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 随机复制按钮点击事件
+    let lastRandomIndex = null; // 记录上一次随机的 index
     randomCopyBtn.addEventListener('click', () => {
         console.log('随机复制按钮被点击！');
         if (filteredResults.length > 0) {
-            const randomIndex = Math.floor(Math.random() * filteredResults.length);
+            let randomIndex;
+            if (filteredResults.length === 1) {
+                randomIndex = 0;
+            } else {
+                let attempts = 0;
+                do {
+                    randomIndex = Math.floor(Math.random() * filteredResults.length);
+                    attempts++;
+                } while (randomIndex === lastRandomIndex && attempts < filteredResults.length);
+            }
+            lastRandomIndex = randomIndex;
             const randomScore = filteredResults[randomIndex];
             const randomScoreCode = randomScore.score_code;
             // 使用兼容性更好的复制方法
