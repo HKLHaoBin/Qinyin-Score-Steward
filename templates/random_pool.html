@@ -200,7 +200,7 @@
                             <th>曲谱码</th>
                             <th class="completion-header" style="position:relative;cursor:pointer;z-index:1002;">
                                 完成率
-                                <div class="completion-filter" style="display:none;position:fixed;top:auto;left:auto;z-index:9999;background:#fff;padding:10px;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:120px;">
+                                <div class="completion-filter" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:9999;background:#fff;padding:10px;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:120px;">
                                     <div class="range-inputs" style="display:flex;align-items:center;gap:8px;">
                                         <input type="number" class="header-min-completion" placeholder="最小" min="0" max="100" style="width:60px;">
                                         <span class="range-separator">-</span>
@@ -211,7 +211,7 @@
                             </th>
                             <th class="favorite-header" style="position:relative;cursor:pointer;z-index:1002;">
                                 收藏
-                                <div class="favorite-filter" style="display:none;position:fixed;top:auto;left:auto;z-index:9999;background:#fff;padding:10px;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:100px;">
+                                <div class="favorite-filter" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:9999;background:#fff;padding:10px;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:100px;">
                                     <button class="header-fav-btn" data-fav="">全部</button>
                                     <button class="header-fav-btn" data-fav="1">仅收藏</button>
                                     <button class="header-fav-btn" data-fav="2">仅未收藏</button>
@@ -305,13 +305,6 @@
                 completionHeader.onclick = (e) => {
                     compFilterVisible = true;
                     completionFilter.style.display = 'block';
-                    setTimeout(() => {
-                        const rect = completionHeader.getBoundingClientRect();
-                        const filterW = completionFilter.offsetWidth;
-                        const filterH = completionFilter.offsetHeight;
-                        completionFilter.style.top = (rect.top + window.scrollY - filterH - 8) + 'px';
-                        completionFilter.style.left = (rect.left + rect.width/2 + window.scrollX - filterW/2) + 'px';
-                    }, 0);
                 };
                 document.addEventListener('mousedown', function hideCompFilter(e) {
                     if (!compFilterVisible) return;
@@ -349,13 +342,6 @@
                 favoriteHeader.onclick = (e) => {
                     favFilterVisible = true;
                     favoriteFilter.style.display = 'block';
-                    setTimeout(() => {
-                        const rect = favoriteHeader.getBoundingClientRect();
-                        const filterW = favoriteFilter.offsetWidth;
-                        const filterH = favoriteFilter.offsetHeight;
-                        favoriteFilter.style.top = (rect.top + window.scrollY - filterH - 8) + 'px';
-                        favoriteFilter.style.left = (rect.left + rect.width/2 + window.scrollX - filterW/2) + 'px';
-                    }, 0);
                 };
                 document.addEventListener('mousedown', function hideFavFilter(e) {
                     if (!favFilterVisible) return;
