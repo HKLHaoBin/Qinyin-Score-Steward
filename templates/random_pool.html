@@ -145,10 +145,12 @@
         const favorite = document.getElementById('favorite').value;
         const customCodes = document.getElementById('customCodes').value.trim();
         if (!name) { alert('池名不能为空'); return; }
-        const filter = {};
+        let filter = {};
         if (minCompletion) filter.min_completion = parseInt(minCompletion);
         if (maxCompletion) filter.max_completion = parseInt(maxCompletion);
         if (favorite) filter.favorite = parseInt(favorite);
+        // 如果所有筛选都为空，则filter设为{}，否则传递实际筛选
+        if (!minCompletion && !maxCompletion && !favorite) filter = {};
         let body = { name, filter };
         if (customCodes) {
             // 只保留合法曲谱码
@@ -181,9 +183,41 @@
             html += `<div class="pool-card" data-pool-id="${pool.id}">
                 <div class="pool-title">${pool.name} <span style="font-size:0.9em;color:#888;">(${pool.codes.length}个)</span></div>
                 <div class="filter-desc">筛选条件：${filterDesc(pool.filter)}</div>
+                <div class="secondary-filter" style="margin-bottom:10px;display:flex;align-items:center;gap:10px;">
+                    <input type="number" class="sec-min-completion" placeholder="最小完成率" min="0" max="100" style="width:90px;">
+                    <span>-</span>
+                    <input type="number" class="sec-max-completion" placeholder="最大完成率" min="0" max="100" style="width:90px;">
+                    <select class="sec-favorite" style="width:100px;">
+                        <option value="">收藏筛选</option>
+                        <option value="1">仅收藏</option>
+                        <option value="2">仅未收藏</option>
+                    </select>
+                    <button class="sec-apply-btn" style="padding:4px 16px;">应用</button>
+                </div>
                 <div class="pool-table-area">
                     <table class="pool-table" style="width:100%;margin:8px 0;">
-                        <thead><tr><th>曲谱码</th><th>完成率</th><th>收藏</th></tr></thead>
+                        <thead><tr>
+                            <th>曲谱码</th>
+                            <th class="completion-header" style="position:relative;cursor:pointer;z-index:1002;">
+                                完成率
+                                <div class="completion-filter" style="display:none;position:fixed;top:auto;left:auto;z-index:9999;background:#fff;padding:10px;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:120px;">
+                                    <div class="range-inputs" style="display:flex;align-items:center;gap:8px;">
+                                        <input type="number" class="header-min-completion" placeholder="最小" min="0" max="100" style="width:60px;">
+                                        <span class="range-separator">-</span>
+                                        <input type="number" class="header-max-completion" placeholder="最大" min="0" max="100" style="width:60px;">
+                                    </div>
+                                    <button class="header-apply-completion" style="margin-top:8px;width:100%;padding:4px 0;">应用</button>
+                                </div>
+                            </th>
+                            <th class="favorite-header" style="position:relative;cursor:pointer;z-index:1002;">
+                                收藏
+                                <div class="favorite-filter" style="display:none;position:fixed;top:auto;left:auto;z-index:9999;background:#fff;padding:10px;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:100px;">
+                                    <button class="header-fav-btn" data-fav="">全部</button>
+                                    <button class="header-fav-btn" data-fav="1">仅收藏</button>
+                                    <button class="header-fav-btn" data-fav="2">仅未收藏</button>
+                                </div>
+                            </th>
+                        </tr></thead>
                         <tbody>
                             ${pool.codes.map(code => `
                                 <tr data-code="${code}">
@@ -198,6 +232,9 @@
                 <div class="pool-actions">
                     <button class="random-copy-btn" style="background: linear-gradient(145deg, #3498db, #2980b9); margin-right: 18px;" onclick="randomCopyFromPool(${pool.id})">随机复制</button>
                     <button class="delete-pool-btn" style="background: linear-gradient(145deg, #ff6c6c, #ffb300);" onclick="deletePool(${pool.id})">删除池</button>
+                    <button class="query-btn" style="background:linear-gradient(145deg,#4a90e2,#357abd);margin-right:8px;" onclick="queryOrExcludePool(${pool.id},'query', this)">查询</button>
+                    <button class="exclude-btn" style="background:linear-gradient(145deg,#ff6c6c,#ffb300);margin-right:8px;" onclick="queryOrExcludePool(${pool.id},'exclude', this)">排除</button>
+                    <button class="reset-pool-btn" style="background:linear-gradient(145deg,#6c8cff,#4e9cff);margin-right:0;" onclick="resetPool(${pool.id}, this)">重置池</button>
                 </div>
             </div>`;
         }
@@ -218,55 +255,137 @@
                 const cell = document.querySelector(`.pool-card [data-code='${r.score_code}'].completion-cell`);
                 if (cell) {
                     cell.textContent = r.completion !== null ? r.completion + '%' : '-';
-                    cell.style.cursor = 'pointer';
-                    cell.onclick = async function() {
-                        const newValue = prompt('请输入新的完成率（0-100）', r.completion !== null ? r.completion : '');
-                        if (newValue === null) return;
-                        const num = parseInt(newValue);
-                        if (isNaN(num) || num < 0 || num > 100) {
-                            showToast('请输入0-100之间的数字');
-                            return;
-                        }
-                        try {
-                            const resp = await fetch('/api/scores/save', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ score_code: r.score_code, completion: num })
-                            });
-                            const data = await resp.json();
-                            if (data.success) {
-                                cell.textContent = num + '%';
-                                showToast('完成率已更新');
-                            } else {
-                                showToast('更新失败');
-                            }
-                        } catch (e) {
-                            showToast('网络错误，更新失败');
-                        }
-                    };
+                    cell.style.cursor = 'default';
+                    cell.onclick = null;
                 }
                 // 收藏
                 const favCell = document.querySelector(`.pool-card [data-code='${r.score_code}'].favorite-cell`);
                 if (favCell) {
                     favCell.textContent = r.is_favorite ? '★' : '☆';
-                    favCell.style.cursor = 'pointer';
-                    favCell.onclick = async function() {
-                        try {
-                            const resp = await fetch(`/api/scores/${r.score_code}/favorite`, { method: 'POST' });
-                            const data = await resp.json();
-                            if (data.success) {
-                                favCell.textContent = data.is_favorite ? '★' : '☆';
-                                showToast(data.is_favorite ? '已收藏' : '已取消收藏');
-                            } else {
-                                showToast('操作失败');
-                            }
-                        } catch (e) {
-                            showToast('网络错误，操作失败');
-                        }
-                    };
+                    favCell.style.cursor = 'default';
+                    favCell.onclick = null;
                 }
             }
         }
+        // 绑定二次筛选事件
+        document.querySelectorAll('.pool-card').forEach(card => {
+            const poolId = card.getAttribute('data-pool-id');
+            const minInput = card.querySelector('.sec-min-completion');
+            const maxInput = card.querySelector('.sec-max-completion');
+            const favSel = card.querySelector('.sec-favorite');
+            const applyBtn = card.querySelector('.sec-apply-btn');
+            applyBtn.onclick = async function() {
+                applyBtn.disabled = true;
+                const min = minInput.value;
+                const max = maxInput.value;
+                const fav = favSel.value;
+                const filter = {};
+                if (min) filter.min_completion = parseInt(min);
+                if (max) filter.max_completion = parseInt(max);
+                if (fav) filter.favorite = parseInt(fav);
+                const resp = await fetch(`/api/random_pool/${poolId}/filter`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filter })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    await loadPools();
+                    showToast('筛选完成');
+                } else {
+                    showToast('筛选失败：' + data.error);
+                }
+                applyBtn.disabled = false;
+            };
+            // 完成率筛选
+            const completionHeader = card.querySelector('.completion-header');
+            const completionFilter = card.querySelector('.completion-filter');
+            if (completionHeader && completionFilter) {
+                let compFilterVisible = false;
+                completionHeader.onclick = (e) => {
+                    compFilterVisible = true;
+                    completionFilter.style.display = 'block';
+                    setTimeout(() => {
+                        const rect = completionHeader.getBoundingClientRect();
+                        const filterW = completionFilter.offsetWidth;
+                        const filterH = completionFilter.offsetHeight;
+                        completionFilter.style.top = (rect.top + window.scrollY - filterH - 8) + 'px';
+                        completionFilter.style.left = (rect.left + rect.width/2 + window.scrollX - filterW/2) + 'px';
+                    }, 0);
+                };
+                document.addEventListener('mousedown', function hideCompFilter(e) {
+                    if (!compFilterVisible) return;
+                    if (!completionFilter.contains(e.target) && e.target !== completionHeader) {
+                        completionFilter.style.display = 'none';
+                        compFilterVisible = false;
+                    }
+                });
+                completionFilter.querySelector('.header-apply-completion').onclick = async function() {
+                    const min = completionFilter.querySelector('.header-min-completion').value;
+                    const max = completionFilter.querySelector('.header-max-completion').value;
+                    const filter = {};
+                    if (min) filter.min_completion = parseInt(min);
+                    if (max) filter.max_completion = parseInt(max);
+                    const resp = await fetch(`/api/random_pool/${poolId}/filter`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filter })
+                    });
+                    const data = await resp.json();
+                    if (data.success) {
+                        await loadPools();
+                    } else {
+                        showToast('筛选失败：' + data.error);
+                    }
+                    completionFilter.style.display = 'none';
+                    compFilterVisible = false;
+                };
+            }
+            // 收藏筛选
+            const favoriteHeader = card.querySelector('.favorite-header');
+            const favoriteFilter = card.querySelector('.favorite-filter');
+            if (favoriteHeader && favoriteFilter) {
+                let favFilterVisible = false;
+                favoriteHeader.onclick = (e) => {
+                    favFilterVisible = true;
+                    favoriteFilter.style.display = 'block';
+                    setTimeout(() => {
+                        const rect = favoriteHeader.getBoundingClientRect();
+                        const filterW = favoriteFilter.offsetWidth;
+                        const filterH = favoriteFilter.offsetHeight;
+                        favoriteFilter.style.top = (rect.top + window.scrollY - filterH - 8) + 'px';
+                        favoriteFilter.style.left = (rect.left + rect.width/2 + window.scrollX - filterW/2) + 'px';
+                    }, 0);
+                };
+                document.addEventListener('mousedown', function hideFavFilter(e) {
+                    if (!favFilterVisible) return;
+                    if (!favoriteFilter.contains(e.target) && e.target !== favoriteHeader) {
+                        favoriteFilter.style.display = 'none';
+                        favFilterVisible = false;
+                    }
+                });
+                favoriteFilter.querySelectorAll('.header-fav-btn').forEach(btn => {
+                    btn.onclick = async function() {
+                        const fav = btn.getAttribute('data-fav');
+                        const filter = {};
+                        if (fav) filter.favorite = parseInt(fav);
+                        const resp = await fetch(`/api/random_pool/${poolId}/filter`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filter })
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            await loadPools();
+                        } else {
+                            showToast('筛选失败：' + data.error);
+                        }
+                        favoriteFilter.style.display = 'none';
+                        favFilterVisible = false;
+                    };
+                });
+            }
+        });
     }
 
     // 随机复制
@@ -375,6 +494,54 @@
             alert('删除失败：' + data.error);
         }
     };
+
+    // 查询和排除功能
+    window.queryOrExcludePool = async function(poolId, type, btn) {
+        if (btn) btn.disabled = true;
+        const input = prompt(type === 'query' ? '请输入要查询的曲谱码（可多行）' : '请输入要排除的曲谱码（可多行）');
+        if (input === null) { if (btn) btn.disabled = false; return; }
+        const codes = input.split(/\r?\n/).map(s=>s.trim()).filter(s=>/^\d{5,}$/.test(s));
+        if (!codes.length) { showToast('无有效曲谱码'); if (btn) btn.disabled = false; return; }
+        // 获取当前池内容
+        const resp = await fetch('/api/random_pool/list');
+        const data = await resp.json();
+        if (!data.success) { showToast('操作失败'); if (btn) btn.disabled = false; return; }
+        const pool = data.pools.find(p=>p.id==poolId);
+        if (!pool) { showToast('池不存在'); if (btn) btn.disabled = false; return; }
+        let newCodes;
+        if (type === 'query') {
+            // 只保留输入的码且在池内
+            newCodes = pool.codes.filter(code=>codes.includes(code));
+        } else {
+            // 排除输入的码
+            newCodes = pool.codes.filter(code=>!codes.includes(code));
+        }
+        // 更新池
+        await fetch(`/api/random_pool/${poolId}/filter`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filter: {}, codes: newCodes })
+        });
+        await loadPools();
+        showToast(type === 'query' ? '查询完成' : '排除完成');
+        if (btn) btn.disabled = false;
+    };
+
+    // 重置池功能
+    window.resetPool = async function(poolId, btn) {
+        if (!confirm('确定要重置该池内容为最初全量吗？')) return;
+        if (btn) btn.disabled = true;
+        const resp = await fetch(`/api/random_pool/${poolId}/reset`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            await loadPools();
+            showToast('池已重置为初始内容');
+        } else {
+            showToast('重置失败：' + data.error);
+        }
+        if (btn) btn.disabled = false;
+    };
+
     // 初始加载
     loadPools();
 
