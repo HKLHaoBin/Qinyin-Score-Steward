@@ -678,9 +678,9 @@ def start_server():
     """启动Flask服务器"""
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    pyperclip.copy(f"http://{local_ip}:5005")
-    print(f"服务器启动在: http://{local_ip}:5005 (已复制到剪贴板)")
-    socketio.run(app, host='0.0.0.0', port=5005, debug=False)
+    pyperclip.copy(f"http://{local_ip}:6605")
+    print(f"服务器启动在: http://{local_ip}:6605 (已复制到剪贴板)")
+    socketio.run(app, host='0.0.0.0', port=6605, debug=False)
 
 # ========== 随机池相关API ==========
 from flask import abort
