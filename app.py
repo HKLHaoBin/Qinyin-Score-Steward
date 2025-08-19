@@ -663,6 +663,17 @@ def fetch_jianshang():
         
         conn.close()
         
+        # 保存曲谱码到文件
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # 确保目录存在
+        output_dir = 'The old appreciation code'
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        filename = os.path.join(output_dir, f'score_codes_{timestamp}.txt')
+        with open(filename, 'w', encoding='utf-8') as f:
+            for code in score_codes:
+                f.write(f'{code}\n')
+        
         return jsonify({
             'success': True,
             'results': results,
@@ -672,6 +683,56 @@ def fetch_jianshang():
             
     except Exception as e:
         print(f"发生错误: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/latest_jianshang_codes', methods=['GET'])
+def get_latest_jianshang_codes():
+    try:
+        print("收到获取最新鉴赏码的请求")
+        # 查找最新的鉴赏码文件
+        output_dir = 'The old appreciation code'
+        print(f"检查目录: {output_dir}")
+        if not os.path.exists(output_dir):
+            print("鉴赏码目录不存在")
+            return jsonify({'success': False, 'error': '鉴赏码目录不存在'}), 404
+        
+        # 获取目录中的所有文件
+        files = os.listdir(output_dir)
+        print(f"目录中的文件: {files}")
+        if not files:
+            print("没有找到鉴赏码文件")
+            return jsonify({'success': False, 'error': '没有找到鉴赏码文件'}), 404
+        
+        # 过滤出txt文件并按时间排序
+        txt_files = [f for f in files if f.endswith('.txt')]
+        print(f"txt文件: {txt_files}")
+        if not txt_files:
+            print("没有找到txt格式的鉴赏码文件")
+            return jsonify({'success': False, 'error': '没有找到鉴赏码文件'}), 404
+        
+        # 按文件名排序，最新的文件应该在最后面（因为文件名包含时间戳）
+        txt_files.sort()
+        latest_file = txt_files[-1]  # 获取最新的文件
+        print(f"最新的文件: {latest_file}")
+        
+        # 读取文件内容
+        file_path = os.path.join(output_dir, latest_file)
+        print(f"读取文件路径: {file_path}")
+        with open(file_path, 'r', encoding='utf-8') as f:
+            codes = [line.strip() for line in f.readlines() if line.strip()]
+        print(f"读取到的码数量: {len(codes)}")
+        
+        result = {
+            'success': True,
+            'codes': codes,
+            'file_name': latest_file
+        }
+        print(f"返回结果: {result}")
+        return jsonify(result)
+    except Exception as e:
+        print(f"获取最新鉴赏码时发生错误: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 def start_server():

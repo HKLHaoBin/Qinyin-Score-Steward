@@ -1,10 +1,16 @@
+console.log('batch_query.js 脚本开始加载');
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOMContentLoaded 事件触发，开始初始化');
     const socket = io();
     const queryBtn = document.getElementById('queryBtn');
     const scoreCodesTextarea = document.getElementById('scoreCodes');
     const resultsBody = document.getElementById('resultsBody');
     const showIncompleteOnlyCheckbox = document.getElementById('showIncompleteOnly');
     const fetchJianshangBtn = document.getElementById('fetchJianshangBtn');
+    console.log('获取到按钮元素:', fetchJianshangBtn);
+    if (fetchJianshangBtn) {
+        console.log('按钮当前文本:', fetchJianshangBtn.textContent);
+    }
     const favoriteFilterBtn = document.getElementById('favoriteFilterBtn');
     const randomCopyBtn = document.getElementById('randomCopyBtn');
     const initialChromeInitializedElement = document.getElementById('initialChromeInitialized');
@@ -384,8 +390,49 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // 获取最新的鉴赏码并添加到排除列表
+    async function loadLatestJianshangCodes() {
+        console.log('loadLatestJianshangCodes 函数被调用');
+        try {
+            const response = await fetch('/api/latest_jianshang_codes');
+            const data = await response.json();
+            console.log('获取最新鉴赏码响应:', data);
+            
+            if (data.success) {
+                // 将获取到的码添加到排除列表
+                const currentExcludeCodes = excludeCodesTextarea.value.trim();
+                const newExcludeCodes = currentExcludeCodes ?
+                    currentExcludeCodes + '\n' + data.codes.join('\n') :
+                    data.codes.join('\n');
+                excludeCodesTextarea.value = newExcludeCodes;
+                
+                // 自动触发查询
+                doQuery();
+                
+                showToast(`已将 ${data.codes.length} 个鉴赏码添加到排除列表并自动查询`);
+            } else {
+                showToast('获取最新鉴赏码失败：' + data.error);
+            }
+        } catch (error) {
+            console.error('获取最新鉴赏码时发生错误:', error);
+            showToast('获取最新鉴赏码时发生错误：' + error.message);
+        }
+    }
+
     // 鉴赏谱获取按钮点击事件
+    console.log('开始绑定按钮点击事件');
     fetchJianshangBtn.addEventListener('click', async function() {
+        console.log('按钮点击事件被触发');
+        console.log('点击了获取鉴赏谱按钮，当前文本:', fetchJianshangBtn.textContent);
+        // 检查当前按钮状态 - 使用includes而不是精确匹配，因为文本可能包含其他内容
+        if (fetchJianshangBtn.textContent.trim().includes('新鉴赏码')) {
+            console.log('检测到新鉴赏码按钮状态，执行新鉴赏码逻辑');
+            // 如果是新鉴赏码按钮，执行新鉴赏码逻辑
+            loadLatestJianshangCodes();
+            return;
+        }
+        console.log('当前按钮状态不是新鉴赏码，执行获取鉴赏谱逻辑');
+        
         // 如果Chrome未初始化完成，则弹出提示并阻止后续操作
         if (!isChromeInitialized) {
             showToast('该功能初始化未完成，可能需要较长时间。');
@@ -403,6 +450,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 displayResults(data.results);
                 // 更新输入框
                 scoreCodesTextarea.value = data.results.map(r => r.score_code).join('\n');
+                // 将按钮文本更改为"新鉴赏码"
+                fetchJianshangBtn.textContent = '新鉴赏码';
+                console.log('按钮文本已更改为: 新鉴赏码');
                 showToast(`成功获取 ${data.results.length} 个曲谱码`);
             } else {
                 showToast('获取鉴赏谱失败：' + data.error);
@@ -410,11 +460,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             showToast('获取鉴赏谱时发生错误：' + error.message);
         } finally {
-            // 只有当初始化成功时，才在获取鉴赏谱后恢复按钮状态
-            if (fetchJianshangBtn.dataset.initialized === 'true') {
-                fetchJianshangBtn.disabled = false;
-                fetchJianshangBtn.textContent = '获取鉴赏谱';
-            }
+            // 恢复按钮可点击状态（无论是否初始化标记），否则后续点击“新鉴赏码”将无响应
+            fetchJianshangBtn.disabled = false;
         }
     });
 
