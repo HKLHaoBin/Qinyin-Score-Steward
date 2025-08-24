@@ -678,7 +678,9 @@ def fetch_jianshang():
             'success': True,
             'results': results,
             'total': len(score_codes),
-            'found': len([r for r in results if r['completion'] is not None])
+            'found': len([r for r in results if r['completion'] is not None]),
+            'filename': os.path.basename(filename),
+            'extracted_count': len(score_codes)
         })
             
     except Exception as e:
@@ -694,9 +696,67 @@ def get_latest_jianshang_codes():
         print(f"检查目录: {output_dir}")
         if not os.path.exists(output_dir):
             print("鉴赏码目录不存在")
-            return jsonify({'success': False, 'error': '鉴赏码目录不存在'}), 404
+            return jsonify({'success': False, 'error': '鉴赏码目录不存在', 'filename': None, 'extracted_count': 0}), 404
         
         # 获取目录中的所有文件
+        # 找到最新的文件，优先选择非今天的文件
+        latest_file = None
+        latest_timestamp = 0
+        today_latest_file = None
+        today_latest_timestamp = 0
+        
+        current_date_str = datetime.now().strftime('%Y%m%d')
+
+        files = os.listdir(output_dir)
+        for f in files:
+            if f.startswith('score_codes_') and f.endswith('.txt'):
+                try:
+                    timestamp_str = f.replace('score_codes_', '').replace('.txt', '')
+                    file_date_str = timestamp_str.split('_')[0]
+                    timestamp = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S').timestamp()
+                    
+                    if file_date_str == current_date_str:
+                        # 如果是今天的文件，记录下来，但不作为首选
+                        if timestamp > today_latest_timestamp:
+                            today_latest_timestamp = timestamp
+                            today_latest_file = f
+                    else:
+                        # 如果不是今天的文件，正常比较
+                        if timestamp > latest_timestamp:
+                            latest_timestamp = timestamp
+                            latest_file = f
+                except ValueError:
+                    continue
+
+        # 如果找到了非今天的文件，则使用它
+        if latest_file:
+            pass
+        # 否则，如果只找到了今天的文件，则使用最新的今天的文件
+        elif today_latest_file:
+            latest_file = today_latest_file
+        # 如果都没有找到，则 latest_file 仍然是 None
+
+        if not latest_file:
+            print("未找到任何鉴赏码文件")
+            return jsonify({'success': False, 'error': '未找到任何鉴赏码文件', 'filename': None, 'extracted_count': 0}), 404
+
+        file_path = os.path.join(output_dir, latest_file)
+        print(f"找到最新鉴赏码文件: {file_path}")
+
+        codes = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                code = line.strip()
+                if code:
+                    codes.append(code)
+        
+        print(f"从文件 {latest_file} 中提取了 {len(codes)} 个鉴赏码")
+        return jsonify({
+            'success': True,
+            'codes': codes,
+            'filename': latest_file,
+            'extracted_count': len(codes)
+        })
         files = os.listdir(output_dir)
         print(f"目录中的文件: {files}")
         if not files:
