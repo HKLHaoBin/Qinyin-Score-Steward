@@ -409,7 +409,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 自动触发查询
                 doQuery();
                 
-                showToast(`已将 ${data.codes.length} 个鉴赏码添加到排除列表并自动查询`);
+                const filename = data.filename || '未知文件';
+                const extractedCount = data.extracted_count || 0;
+                showToast(`已从文件 ${filename} 中提取 ${extractedCount} 个鉴赏码，并已添加到排除列表并自动查询`);
             } else {
                 showToast('获取最新鉴赏码失败：' + data.error);
             }
@@ -453,7 +455,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 将按钮文本更改为"新鉴赏码"
                 fetchJianshangBtn.textContent = '新鉴赏码';
                 console.log('按钮文本已更改为: 新鉴赏码');
-                showToast(`成功获取 ${data.results.length} 个曲谱码`);
+                const filename = data.filename || '未知文件';
+                const extractedCount = data.extracted_count || 0;
+                showToast(`成功获取 ${extractedCount} 个曲谱码。文件：${filename}`);
             } else {
                 showToast('获取鉴赏谱失败：' + data.error);
             }
@@ -481,4 +485,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 初始加载
     refreshResults();
-}); 
+});
