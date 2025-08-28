@@ -1038,8 +1038,8 @@ if __name__ == '__main__':
     # 启动时备份数据库
     backup_database()
     
-    # 直接启动服务器（不使用线程）
-    start_server()
-
     print("初始化Chrome异步驱动")
     init_chrome_async()
+
+    # 直接启动服务器（不使用线程）
+    start_server()
