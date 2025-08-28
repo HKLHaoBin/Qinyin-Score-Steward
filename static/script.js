@@ -1,4 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
+    if (typeof io === 'undefined') {
+        console.error('Socket.IO 库未正确加载，请检查网络连接或刷新页面');
+        alert('Socket.IO 库加载失败，部分功能可能无法正常使用。请检查网络连接后刷新页面。');
+        return;
+    }
+    
     const socket = io();
     const historyList = document.getElementById('historyList');
     const messageDisplay = document.getElementById('message');
