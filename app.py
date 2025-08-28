@@ -21,7 +21,7 @@ import json
 from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='threading')
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
 
 # 全局变量
 chrome_options = None
@@ -148,14 +148,18 @@ def check_clipboard():
     max_retries = 3
     retry_delay = 1  # 重试延迟（秒）
     
+    print("剪贴板监控线程开始运行...")
+    
     while True:
         try:
             current_content = pyperclip.paste()
             if current_content and current_content != last_clipboard_content:
                 last_clipboard_content = current_content
+                print(f"检测到剪贴板变化: {current_content}")
                 
                 # 检查是否是有效的曲谱码
                 if is_valid_score_code(current_content):
+                    print(f"检测到有效曲谱码: {current_content}")
                     current_score_code = current_content
                     # 检查数据库中是否存在该曲谱码
                     conn = sqlite3.connect('scores.db')
@@ -172,6 +176,7 @@ def check_clipboard():
                         'completion': result[0] if result else None,
                         'is_favorite': result[1] if result else False
                     })
+                    print(f"已发送曲谱码到前端: {current_content}")
             retry_count = 0  # 重置重试计数
         except Exception as e:
             retry_count += 1
@@ -186,8 +191,21 @@ def check_clipboard():
         time.sleep(0.5)  # 每0.5秒检查一次
 
 # 启动剪贴板监控线程
-clipboard_thread = threading.Thread(target=check_clipboard, daemon=True)
+clipboard_thread = threading.Thread(target=check_clipboard, daemon=True, name="ClipboardMonitor")
 clipboard_thread.start()
+print(f"剪贴板监控线程已启动: {clipboard_thread.name}")
+
+# 添加线程状态检查函数
+def check_thread_status():
+    """检查所有活动线程状态"""
+    import threading
+    active_threads = threading.enumerate()
+    print(f"当前活动线程 ({len(active_threads)}):")
+    for thread in active_threads:
+        print(f"  - {thread.name}: {'alive' if thread.is_alive() else 'dead'}")
+
+# 在启动后检查线程状态
+check_thread_status()
 
 @app.route('/')
 def index():
@@ -797,11 +815,37 @@ def get_latest_jianshang_codes():
 
 def start_server():
     """启动Flask服务器"""
+    import socket
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    pyperclip.copy(f"http://{local_ip}:6605")
-    print(f"服务器启动在: http://{local_ip}:6605 (已复制到剪贴板)")
-    socketio.run(app, host='0.0.0.0', port=6605, debug=False)
+    
+    # 检查端口是否被占用
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(('0.0.0.0', 6605))
+        sock.close()
+        # 端口可用，启动服务器
+        pyperclip.copy(f"http://{local_ip}:6605")
+        print(f"服务器启动在: http://{local_ip}:6605 (已复制到剪贴板)")
+        socketio.run(app, host='0.0.0.0', port=6605, debug=False, allow_unsafe_werkzeug=True)
+    except OSError as e:
+        print(f"端口6605被占用，尝试使用其他端口: {e}")
+        # 尝试其他端口
+        for port in [6606, 6607, 6608, 5000, 8080]:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.bind(('0.0.0.0', port))
+                sock.close()
+                print(f"使用备用端口: {port}")
+                pyperclip.copy(f"http://{local_ip}:{port}")
+                print(f"服务器启动在: http://{local_ip}:{port} (已复制到剪贴板)")
+                socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
+                break
+            except OSError:
+                continue
+        else:
+            print("所有备用端口都被占用，无法启动服务器")
+            return
 
 # ========== 随机池相关API ==========
 from flask import abort
@@ -994,23 +1038,8 @@ if __name__ == '__main__':
     # 启动时备份数据库
     backup_database()
     
-    # 创建并启动服务器线程
-    server_thread = threading.Thread(target=start_server)
-    server_thread.daemon = True
-    server_thread.start()
-    
-    # 创建并启动Chrome初始化线程
+    # 直接启动服务器（不使用线程）
+    start_server()
+
+    print("初始化Chrome异步驱动")
     init_chrome_async()
-    
-    # 保持主线程运行
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n程序正在退出...")
-        if driver is not None:
-            try:
-                driver.quit()
-            except:
-                pass
-        print("Chrome浏览器已关闭")
