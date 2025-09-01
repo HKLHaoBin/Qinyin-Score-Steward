@@ -92,8 +92,8 @@ document.addEventListener('DOMContentLoaded', () => {
             completionInput.value = data.completion;
             messageDisplay.textContent = data.message;
             saveBtn.disabled = true;
-            // 添加到历史记录
-            addToHistory(data);
+            // 刷新历史记录和统计信息
+            refreshHistory();
             updateStats();
         }
     });
@@ -118,10 +118,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // 防抖函数
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // 自动保存函数
+    const autoSave = debounce(function() {
+        const value = parseInt(completionInput.value);
+        if (!isNaN(value) && value >= 0 && value <= 100 && currentScoreCode) {
+            fetch('/api/scores/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    score_code: currentScoreCode,
+                    completion: value
+                })
+            }).then(() => {
+                // 保存成功后更新显示
+                document.getElementById('currentCompletion').textContent = value + '%';
+                // 刷新历史记录
+                refreshHistory();
+            });
+        }
+    }, 1000);
+
     // 输入框变化事件
     completionInput.addEventListener('input', function() {
         const value = parseInt(this.value);
         saveBtn.disabled = !(value >= 0 && value <= 100);
+        // 触发自动保存
+        autoSave();
     });
 
     // 更新收藏状态
@@ -135,12 +172,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 收藏按钮点击事件
-    favoriteBtn.addEventListener('click', function() {
+    favoriteBtn.addEventListener('click', async function() {
         if (currentScoreCode) {
-            // 先保存完成率
+            // 先保存完成率（如果有有效值）
             const completion = parseInt(completionInput.value);
-            if (completion >= 0 && completion <= 100) {
-                fetch('/api/scores/save', {
+            if (!isNaN(completion) && completion >= 0 && completion <= 100) {
+                await fetch('/api/scores/save', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -153,12 +190,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             // 然后更新收藏状态
-            fetch(`/api/scores/${currentScoreCode}/favorite`, {
+            const response = await fetch(`/api/scores/${currentScoreCode}/favorite`, {
                 method: 'POST'
-            }).then(() => {
-                // 收藏状态更新后刷新历史记录
-                refreshHistory();
             });
+            
+            if (response.ok) {
+                const result = await response.json();
+                // 立即更新按钮状态
+                favoriteBtn.textContent = result.is_favorite ? '★' : '☆';
+                // 刷新历史记录
+                refreshHistory();
+            }
         }
     });
 
