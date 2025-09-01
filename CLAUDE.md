@@ -71,4 +71,4 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Automatic database backups on application start
 - Mobile-friendly responsive design
 - Supports both Chinese and English interfaces
-- Can be packaged as standalone executable
+- Can be packaged as standalone executable.
