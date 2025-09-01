@@ -11,23 +11,44 @@ import shutil
 # 获取本机IP地址
 import socket
 import pyperclip
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 import json
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
 
 # 全局变量
-chrome_options = None
-driver = None
-jianshang_url = "https://act.miyoushe.com/ys/event/ugc-music-stable/index.html?mhy_presentation_style=fullscreen&mhy_auth_required=true&game_biz=hk4e_cn#/list?key=Button_Jianshang&is_from_button=true"
-chrome_initialized = False  # 添加初始化状态标志
+jianshang_api_url = "https://act-hk4e-api.miyoushe.com/event/musicugc/v1/second_page"
+jianshang_api_initialized = False  # API初始化状态标志
+
+# API配置
+JIANSHANG_API_PARAMS = {
+    "key": "Button_Jianshang",
+    "is_from_button": "true", 
+    "page": 1,
+    "page_size": 30,
+    "lang": "zh-cn",
+    "game_biz": "hk4e_cn",
+    "is_mobile": "false",
+}
+
+# Cookie配置（可根据需要修改）
+JIANSHANG_API_COOKIE = (
+    "mi18nLang=zh-cn; "
+    "_MHYUUID=2903d6c6-de16-4f7b-b56f-6b78a2c4bc43; "
+    "DEVICEFP_SEED_ID=4f0ea30a34259807; "
+    "DEVICEFP_SEED_TIME=1756749599682; "
+    "DEVICEFP=38d810118c4f3; "
+    "SERVERID=f815eaf6a4679837f990ebc085032436|1756749605|1756749590"
+)
+
+JIANSHANG_API_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Origin": "https://act.miyoushe.com",
+    "Referer": "https://act.miyoushe.com/ys/event/ugc-music-stable/index.html?mhy_presentation_style=fullscreen&mhy_auth_required=true&game_biz=hk4e_cn",
+    "Cookie": JIANSHANG_API_COOKIE,
+}
 
 def backup_database():
     """备份数据库文件"""
@@ -124,6 +145,79 @@ def init_db():
 
 # 初始化数据库
 init_db()
+
+# ========== API爬虫相关函数 ==========
+
+def fetch_jianshang_api_page(session, page, timeout=12):
+    """获取单页鉴赏数据"""
+    params = dict(JIANSHANG_API_PARAMS, page=page)
+    try:
+        resp = session.get(
+            jianshang_api_url,
+            params=params,
+            headers=JIANSHANG_API_HEADERS,
+            timeout=timeout
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("retcode") != 0:
+            raise RuntimeError(f"API返回错误: retcode={data.get('retcode')}, message={data.get('message')}")
+        return data
+    except Exception as e:
+        print(f"获取第{page}页数据失败: {e}")
+        raise
+
+def extract_share_codes_from_api_response(payload):
+    """从API响应中提取share_code字段"""
+    data = payload.get("data") or {}
+    slide = data.get("slide") or {}
+    work_list = slide.get("work_list") or []
+    
+    share_codes = []
+    for work in work_list:
+        share_code = work.get("share_code")
+        if share_code and isinstance(share_code, str) and share_code.isdigit() and len(share_code) >= 5:
+            share_codes.append(share_code)
+    
+    return share_codes
+
+def crawl_all_jianshang_codes(max_pages=50, sleep_sec=0.3):
+    """爬取所有鉴赏码"""
+    session = requests.Session()
+    page = 1
+    all_share_codes = []
+    seen_codes = set()
+    
+    for _ in range(max_pages):
+        try:
+            payload = fetch_jianshang_api_page(session, page)
+            share_codes = extract_share_codes_from_api_response(payload)
+            
+            print(f"第{page}页 -> 找到{len(share_codes)}个曲谱码")
+            
+            # 去重并添加到结果
+            for code in share_codes:
+                if code not in seen_codes:
+                    seen_codes.add(code)
+                    all_share_codes.append(code)
+            
+            # 检查是否还有更多数据
+            data = payload.get("data") or {}
+            slide = data.get("slide") or {}
+            work_list = slide.get("work_list") or []
+            
+            if len(work_list) < JIANSHANG_API_PARAMS["page_size"]:
+                print(f"第{page}页数据不足，停止爬取")
+                break
+                
+            page += 1
+            time.sleep(sleep_sec)  # 限速防止被封
+            
+        except Exception as e:
+            print(f"获取第{page}页失败: {e}")
+            break
+    
+    return all_share_codes
 
 # 存储上一次的剪贴板内容
 last_clipboard_content = ''
@@ -381,8 +475,7 @@ def get_stats():
 
 @app.route('/batch')
 def batch_query():
-    global chrome_initialized
-    return render_template('batch_query.html', initial_chrome_initialized=chrome_initialized)
+    return render_template('batch_query.html', initial_chrome_initialized=False)
 
 @app.route('/api/scores/batch', methods=['POST'])
 def batch_query_scores():
@@ -465,191 +558,23 @@ def batch_query_scores():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-def init_chrome():
-    """初始化Chrome浏览器"""
-    global chrome_options, driver, chrome_initialized
-    if driver is not None:
-        try:
-            driver.quit()
-        except:
-            pass
-    
-    chrome_options = Options()
-    chrome_options.add_argument('--headless=new')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-software-rasterizer')
-    chrome_options.add_argument('--disable-webgl')
-    chrome_options.add_argument('--disable-webgl2')
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--disable-logging')
-    chrome_options.add_argument('--log-level=3')
-    chrome_options.add_argument('--silent')
-    chrome_options.add_argument('--disable-gpu-sandbox')
-    chrome_options.add_argument('--disable-setuid-sandbox')
-    chrome_options.add_argument('--disable-accelerated-2d-canvas')
-    chrome_options.add_argument('--disable-accelerated-video-decode')
-    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    
-    print("Chrome Options:")
-    for arg in chrome_options.arguments:
-        print(f"  {arg}")
-    
-    try:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(options=chrome_options, service=service)
-        driver.set_page_load_timeout(30)
-        driver.get(jianshang_url)
-        
-        # 等待页面加载完成
-        wait = WebDriverWait(driver, 20)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        
-        print("Chrome浏览器初始化成功")
-        chrome_initialized = True
-        socketio.emit('chrome_init_status', {'success': True, 'message': 'Chrome浏览器初始化成功'})
-        return True
-    except Exception as e:
-        print(f"Chrome浏览器初始化失败: {type(e).__name__} - {e}")
-        import traceback
-        traceback.print_exc()
-        if driver is not None:
-            try:
-                driver.quit()
-            except:
-                pass
-        driver = None
-        chrome_initialized = False
-        socketio.emit('chrome_init_status', {'success': False, 'message': 'Chrome浏览器初始化失败'})
-        return False
-
-def init_chrome_async():
-    """异步初始化Chrome浏览器"""
-    def init():
-        time.sleep(5)  # 等待服务器完全启动
-        retry_count = 0
-        max_retries = 5
-        retry_delay = 2  # 重试延迟（秒）
-        
-        while retry_count < max_retries:
-            if init_chrome():
-                break
-            retry_count += 1
-            if retry_count < max_retries:
-                print(f"Chrome初始化失败，{retry_delay}秒后重试 ({retry_count}/{max_retries})")
-                time.sleep(retry_delay)
-    
-    thread = threading.Thread(target=init)
-    thread.daemon = True
-    thread.start()
-
-def scroll_to_bottom():
-    """滚动到页面底部"""
-    global driver
-    if driver is None:
-        return False
-        
-    try:
-        last_height = driver.execute_script("return document.body.scrollHeight")
-        scroll_attempts = 0
-        max_scroll_attempts = 100  # 增加最大滚动次数
-        
-        while scroll_attempts < max_scroll_attempts:
-            # 滚动到底部
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(0.5)  # 减少等待时间
-            
-            # 检查是否到达底部
-            new_height = driver.execute_script("return document.body.scrollHeight")
-            if new_height == last_height:
-                # 尝试再次滚动，以防万一
-                time.sleep(0.5)
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1)
-                new_height = driver.execute_script("return document.body.scrollHeight")
-                if new_height == last_height:
-                    print("已到达页面底部")
-                    return True
-            last_height = new_height
-            scroll_attempts += 1
-            print(f"滚动进度: {scroll_attempts}/{max_scroll_attempts}")
-            
-        return False
-    except Exception as e:
-        print(f"滚动过程中出现错误: {str(e)}")
-        return False
+# Selenium浏览器相关代码已移除，使用API爬虫替代
 
 @app.route('/api/fetch_jianshang', methods=['GET'])
 def fetch_jianshang():
     try:
-        global driver, chrome_initialized
+        print("开始通过API获取鉴赏码...")
         
-        # 检查Chrome是否初始化完成
-        if not chrome_initialized:
-            # 尝试重新初始化
-            retry_count = 0
-            max_retries = 5
-            while retry_count < max_retries and not chrome_initialized:
-                print(f"Chrome未初始化，尝试重新初始化 ({retry_count + 1}/{max_retries})")
-                init_chrome()
-                retry_count += 1
-                if not chrome_initialized:
-                    time.sleep(2)  # 等待2秒后重试
-            
-            if not chrome_initialized:
-                return jsonify({
-                    'success': False,
-                    'error': 'Chrome浏览器初始化失败，请稍后重试'
-                }), 503  # 使用503表示服务暂时不可用
-        
-        # 确保浏览器已初始化
-        if driver is None:
-            return jsonify({
-                'success': False,
-                'error': 'Chrome浏览器未就绪，请稍后重试'
-            }), 503
-        
-        # 先滚动到页面底部
-        if not scroll_to_bottom():
-            return jsonify({
-                'success': False,
-                'error': '滚动到页面底部失败'
-            }), 500
-        
-        # 获取曲谱码的重试机制
-        retry_count = 0
-        max_retries = 5
-        score_codes = []
-        
-        while retry_count < max_retries:
-            try:
-                page_text = driver.find_element(By.TAG_NAME, "body").text
-                numbers = re.findall(r'\b\d{5,}\b', page_text)
-                score_codes = list(set(numbers))  # 去重
-                
-                if score_codes:
-                    print(f"共找到 {len(score_codes)} 个曲谱码")
-                    break
-                else:
-                    print(f"未找到任何曲谱码，尝试重试 ({retry_count + 1}/{max_retries})")
-                    retry_count += 1
-                    if retry_count < max_retries:
-                        time.sleep(1)  # 等待1秒后重试
-                        # 重新滚动到底部
-                        scroll_to_bottom()
-            except Exception as e:
-                print(f"获取内容时出现错误: {str(e)}")
-                retry_count += 1
-                if retry_count < max_retries:
-                    time.sleep(1)
-                    continue
+        # 使用API爬取鉴赏码
+        score_codes = crawl_all_jianshang_codes(max_pages=50, sleep_sec=0.3)
         
         if not score_codes:
             return jsonify({
                 'success': False,
-                'error': '多次尝试后仍未找到任何曲谱码'
+                'error': '未找到任何曲谱码'
             }), 404
+        
+        print(f"共找到 {len(score_codes)} 个曲谱码")
         
         # 批量查询这些曲谱码
         conn = sqlite3.connect('scores.db')
@@ -702,7 +627,9 @@ def fetch_jianshang():
         })
             
     except Exception as e:
-        print(f"发生错误: {str(e)}")
+        print(f"通过API获取鉴赏码时发生错误: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/latest_jianshang_codes', methods=['GET'])
@@ -1038,8 +965,7 @@ if __name__ == '__main__':
     # 启动时备份数据库
     backup_database()
     
-    print("初始化Chrome异步驱动")
-    init_chrome_async()
-
+    print("千音雅集服务器启动 - 使用API爬虫模式")
+    
     # 直接启动服务器（不使用线程）
     start_server()

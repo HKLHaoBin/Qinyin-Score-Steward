@@ -22,18 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let isChromeInitialized = false; // 初始状态为未初始化
     let excludeList = [];
 
-    // 初始设置按钮样式和文本
-    if (initialChromeInitializedElement) {
-        isChromeInitialized = JSON.parse(initialChromeInitializedElement.value); // 从隐藏字段获取初始状态
-    }
-
-    if (isChromeInitialized) {
-        fetchJianshangBtn.classList.remove('disabled-look');
-        fetchJianshangBtn.textContent = '获取鉴赏谱';
-    } else {
-        fetchJianshangBtn.classList.add('disabled-look');
-        fetchJianshangBtn.textContent = '获取鉴赏谱 (初始化中)';
-    }
+    // 直接启用获取鉴赏谱按钮（不再需要Chrome初始化）
+    fetchJianshangBtn.classList.remove('disabled-look');
+    fetchJianshangBtn.textContent = '获取鉴赏谱';
 
     let currentResults = []; // 存储当前查询结果
     let filteredResults = []; // 存储当前筛选后的结果
@@ -426,6 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchJianshangBtn.addEventListener('click', async function() {
         console.log('按钮点击事件被触发');
         console.log('点击了获取鉴赏谱按钮，当前文本:', fetchJianshangBtn.textContent);
+        
         // 检查当前按钮状态 - 使用includes而不是精确匹配，因为文本可能包含其他内容
         if (fetchJianshangBtn.textContent.trim().includes('新鉴赏码')) {
             console.log('检测到新鉴赏码按钮状态，执行新鉴赏码逻辑');
@@ -434,12 +426,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         console.log('当前按钮状态不是新鉴赏码，执行获取鉴赏谱逻辑');
-        
-        // 如果Chrome未初始化完成，则弹出提示并阻止后续操作
-        if (!isChromeInitialized) {
-            showToast('该功能初始化未完成，可能需要较长时间。');
-            return;
-        }
 
         try {
             fetchJianshangBtn.disabled = true; // 临时禁用，防止重复点击
@@ -464,24 +450,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             showToast('获取鉴赏谱时发生错误：' + error.message);
         } finally {
-            // 恢复按钮可点击状态（无论是否初始化标记），否则后续点击“新鉴赏码”将无响应
+            // 恢复按钮可点击状态
             fetchJianshangBtn.disabled = false;
         }
     });
 
-    // 监听Chrome初始化状态
-    socket.on('chrome_init_status', function(data) {
-        isChromeInitialized = data.success; // 更新初始化状态
-        if (data.success) {
-            fetchJianshangBtn.textContent = '获取鉴赏谱';
-            fetchJianshangBtn.classList.remove('disabled-look'); // 移除禁用样式
-            showToast(data.message);
-        } else {
-            fetchJianshangBtn.textContent = '获取鉴赏谱 (初始化失败)';
-            fetchJianshangBtn.classList.add('disabled-look'); // 添加禁用样式
-            showToast(data.message + '，可能需要较长时间，请稍后重试。');
-        }
-    });
+    // Chrome初始化状态监听已移除（不再需要浏览器初始化）
 
     // 初始加载
     refreshResults();
