@@ -6,74 +6,75 @@
     <title>随机池管理</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <script src="/static/dark-mode.js"></script>
     <style>
-        body { background: #f7f8fa; }
-        .container { max-width: 900px; margin: 30px auto; background: #fff; border-radius: 18px; box-shadow: 0 4px 24px 0 rgba(0,0,0,0.08); padding: 32px 24px; }
-        h1 { text-align: center; margin-bottom: 1.5em; letter-spacing: 2px; }
-        .create-pool-area { background: #f0f4fa; border-radius: 12px; padding: 18px 20px 14px 20px; margin-bottom: 2em; box-shadow: 0 2px 8px 0 rgba(0,0,0,0.04); }
-        .create-pool-area h2 { margin-top: 0; font-size: 1.15em; color: #3a4a6b; }
+        body { background-color: var(--bg-primary); }
+        .container { max-width: 900px; margin: 30px auto; background-color: var(--bg-secondary); border-radius: 18px; box-shadow: 0 4px 24px var(--shadow-color); padding: 32px 24px; }
+        h1 { text-align: center; margin-bottom: 1.5em; letter-spacing: 2px; color: var(--header-color); }
+        .create-pool-area { background-color: var(--card-bg); border-radius: 12px; padding: 18px 20px 14px 20px; margin-bottom: 2em; box-shadow: 0 2px 8px var(--shadow-color); border: 1px solid var(--border-color); }
+        .create-pool-area h2 { margin-top: 0; font-size: 1.15em; color: var(--header-color); }
         .create-pool-area input, .create-pool-area select, .create-pool-area textarea {
-            border: 1px solid #cfd8dc; border-radius: 7px; padding: 6px 10px; margin: 4px 6px 8px 0; font-size: 1em; transition: border 0.2s; outline: none;
+            border: 1px solid var(--border-color); border-radius: 7px; padding: 6px 10px; margin: 4px 6px 8px 0; font-size: 1em; transition: border 0.2s; outline: none; background-color: var(--input-bg); color: var(--text-primary);
         }
         .create-pool-area input:focus, .create-pool-area select:focus, .create-pool-area textarea:focus {
-            border: 1.5px solid #6c8cff;
+            border: 1.5px solid var(--accent-color);
         }
         .create-pool-area button {
-            background: linear-gradient(90deg, #6c8cff 0%, #4e9cff 100%); color: #fff; border: none; border-radius: 7px; padding: 7px 22px; font-size: 1em; cursor: pointer; box-shadow: 0 2px 8px 0 rgba(76,140,255,0.08); transition: background 0.2s, box-shadow 0.2s;
+            background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-hover) 100%); color: var(--text-primary); border: none; border-radius: 7px; padding: 7px 22px; font-size: 1em; cursor: pointer; box-shadow: 0 2px 8px var(--shadow-color); transition: background 0.2s, box-shadow 0.2s;
         }
         .create-pool-area button:hover {
-            background: linear-gradient(90deg, #4e9cff 0%, #6c8cff 100%); box-shadow: 0 4px 16px 0 rgba(76,140,255,0.16);
+            background: linear-gradient(90deg, var(--accent-hover) 0%, var(--accent-color) 100%); box-shadow: 0 4px 16px var(--shadow-color);
         }
         .pool-list { margin-top: 2em; }
         .pool-card {
-            border: 1.5px solid #e3e8f0; border-radius: 16px; padding: 1.2em 1.5em; margin-bottom: 2em;
-            background: #fafdff; box-shadow: 0 4px 18px 0 rgba(76,140,255,0.07), 0 1.5px 0 #e3e8f0;
+            border: 1.5px solid var(--border-color); border-radius: 16px; padding: 1.2em 1.5em; margin-bottom: 2em;
+            background-color: var(--card-bg); box-shadow: 0 4px 18px rgba(76,140,255,0.07), 0 1.5px 0 var(--border-color);
             transition: box-shadow 0.2s, border 0.2s;
         }
         .pool-card:hover {
-            box-shadow: 0 8px 32px 0 rgba(76,140,255,0.13), 0 2px 0 #e3e8f0;
-            border: 1.5px solid #b3c6ff;
+            box-shadow: 0 8px 32px rgba(76,140,255,0.13), 0 2px 0 var(--border-color);
+            border: 1.5px solid var(--accent-color);
         }
-        .pool-title { font-weight: bold; font-size: 1.18em; color: #3a4a6b; margin-bottom: 0.2em; }
-        .filter-desc { color: #7a8ca5; font-size: 0.98em; margin-bottom: 0.5em; }
+        .pool-title { font-weight: bold; font-size: 1.18em; color: var(--header-color); margin-bottom: 0.2em; }
+        .filter-desc { color: var(--text-secondary); font-size: 0.98em; margin-bottom: 0.5em; }
         .pool-table-area { overflow-x: auto; }
         .pool-table {
-            width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border-radius: 10px; overflow: hidden;
-            box-shadow: 0 2px 8px 0 rgba(76,140,255,0.04);
+            width: 100%; border-collapse: separate; border-spacing: 0; background-color: var(--bg-secondary); border-radius: 10px; overflow: hidden;
+            box-shadow: 0 2px 8px rgba(76,140,255,0.04);
         }
         .pool-table th, .pool-table td {
-            padding: 8px 10px; text-align: center; font-size: 1em;
+            padding: 8px 10px; text-align: center; font-size: 1em; color: var(--text-primary);
         }
         .pool-table th {
-            background: #eaf2ff; color: #3a4a6b; font-weight: 600; border-bottom: 2px solid #dbe6fa;
+            background-color: var(--table-header-bg); color: var(--header-color); font-weight: 600; border-bottom: 2px solid var(--border-color);
         }
         .pool-table tr {
             transition: background 0.18s;
         }
         .pool-table tr:hover {
-            background: #f0f6ff;
+            background-color: var(--table-hover);
         }
         .completion-cell, .favorite-cell {
             cursor: pointer; border-radius: 6px; transition: background 0.18s, color 0.18s;
         }
         .completion-cell:hover {
-            background: #e3f0ff; color: #2a5cff;
+            background: var(--table-hover); color: var(--accent-color);
         }
         .favorite-cell {
             font-size: 1.25em; transition: color 0.18s;
         }
         .favorite-cell:hover {
-            color: #ffb300;
+            color: var(--accent-color);
         }
         .pool-actions { margin-top: 0.7em; }
         .pool-actions button {
-            background: linear-gradient(90deg, #ffb300 0%, #ff6c6c 100%); color: #fff; border: none; border-radius: 7px; padding: 7px 18px; font-size: 1em; cursor: pointer; margin-right: 10px; box-shadow: 0 2px 8px 0 rgba(255,179,0,0.08); transition: background 0.2s, box-shadow 0.2s;
+            background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-hover) 100%); color: white; border: none; border-radius: 7px; padding: 7px 18px; font-size: 1em; cursor: pointer; margin-right: 10px; box-shadow: 0 2px 8px rgba(76,140,255,0.08); transition: background 0.2s, box-shadow 0.2s;
         }
         .pool-actions button:hover {
-            background: linear-gradient(90deg, #ff6c6c 0%, #ffb300 100%); box-shadow: 0 4px 16px 0 rgba(255,179,0,0.16);
+            background: linear-gradient(90deg, var(--accent-hover) 0%, var(--accent-color) 100%); box-shadow: 0 4px 16px var(--shadow-color);
         }
         .toast {
-            position: fixed; left: 50%; top: 10%; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 28px; border-radius: 8px; font-size: 1.08em; opacity: 0; pointer-events: none; z-index: 9999; transition: opacity 0.3s, top 0.3s;
+            position: fixed; left: 50%; top: 10%; transform: translateX(-50%); background-color: var(--card-bg); color: var(--text-primary); padding: 10px 28px; border-radius: 8px; font-size: 1.08em; opacity: 0; pointer-events: none; z-index: 9999; transition: opacity 0.3s, top 0.3s; border: 1px solid var(--border-color);
         }
         .toast.show { opacity: 1; top: 5%; pointer-events: auto; }
         
@@ -82,11 +83,11 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: #fff;
-            border: 2px solid #6c8cff;
+            background-color: var(--bg-secondary);
+            border: 2px solid var(--accent-color);
             border-radius: 12px;
             padding: 20px;
-            box-shadow: 0 8px 32px rgba(108, 140, 255, 0.3);
+            box-shadow: 0 8px 32px var(--shadow-color);
             z-index: 1000;
             min-width: 250px;
             text-align: center;
@@ -103,23 +104,23 @@
         
         .score-code {
             font-size: 1.5em;
-            color: #3a4a6b;
+            color: var(--text-primary);
         }
         
         .favorite-icon {
             font-size: 1.8em;
-            color: #ffb300;
+            color: var(--accent-color);
             transition: color 0.2s;
         }
         
         .completion-row {
             font-size: 1.1em;
-            color: #7a8ca5;
+            color: var(--text-secondary);
         }
         
         .completion-badge {
-            background: linear-gradient(90deg, #6c8cff 0%, #4e9cff 100%);
-            color: white;
+            background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+            color: var(--text-primary);
             padding: 4px 12px;
             border-radius: 20px;
             font-weight: bold;
@@ -229,7 +230,7 @@
         let html = '';
         for (const pool of pools) {
             html += `<div class="pool-card" data-pool-id="${pool.id}">
-                <div class="pool-title">${pool.name} <span style="font-size:0.9em;color:#888;">(${pool.codes.length}个)</span></div>
+                <div class="pool-title">${pool.name} <span style="font-size:0.9em;color:var(--text-muted);">(${pool.codes.length}个)</span></div>
                 <div class="filter-desc">筛选条件：${filterDesc(pool.filter)}</div>
                 <div class="secondary-filter" style="margin-bottom:10px;display:flex;align-items:center;gap:10px;">
                     <input type="number" class="sec-min-completion" placeholder="最小完成率" min="0" max="100" style="width:90px;">
@@ -248,7 +249,7 @@
                             <th>曲谱码</th>
                             <th class="completion-header" style="position:relative;cursor:pointer;z-index:1002;">
                                 完成率
-                                <div class="completion-filter" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:9999;background:#fff;padding:10px;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:120px;">
+                                <div class="completion-filter" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:9999;background:var(--bg-secondary);padding:10px;border:1px solid var(--border-color);border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:120px;">
                                     <div class="range-inputs" style="display:flex;align-items:center;gap:8px;">
                                         <input type="number" class="header-min-completion" placeholder="最小" min="0" max="100" style="width:60px;">
                                         <span class="range-separator">-</span>
@@ -259,7 +260,7 @@
                             </th>
                             <th class="favorite-header" style="position:relative;cursor:pointer;z-index:1002;">
                                 收藏
-                                <div class="favorite-filter" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:9999;background:#fff;padding:10px;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:100px;">
+                                <div class="favorite-filter" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:9999;background:var(--bg-secondary);padding:10px;border:1px solid var(--border-color);border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:100px;">
                                     <button class="header-fav-btn" data-fav="">全部</button>
                                     <button class="header-fav-btn" data-fav="1">仅收藏</button>
                                     <button class="header-fav-btn" data-fav="2">仅未收藏</button>
@@ -278,11 +279,11 @@
                     </table>
                 </div>
                 <div class="pool-actions">
-                    <button class="random-copy-btn" style="background: linear-gradient(145deg, #3498db, #2980b9); margin-right: 18px;" onclick="randomCopyFromPool(${pool.id})">随机复制</button>
-                    <button class="delete-pool-btn" style="background: linear-gradient(145deg, #ff6c6c, #ffb300);" onclick="deletePool(${pool.id})">删除池</button>
-                    <button class="query-btn" style="background:linear-gradient(145deg,#4a90e2,#357abd);margin-right:8px;" onclick="queryOrExcludePool(${pool.id},'query', this)">查询</button>
-                    <button class="exclude-btn" style="background:linear-gradient(145deg,#ff6c6c,#ffb300);margin-right:8px;" onclick="queryOrExcludePool(${pool.id},'exclude', this)">排除</button>
-                    <button class="reset-pool-btn" style="background:linear-gradient(145deg,#6c8cff,#4e9cff);margin-right:0;" onclick="resetPool(${pool.id}, this)">重置池</button>
+                    <button class="random-copy-btn" style="background: linear-gradient(145deg, var(--accent-color), var(--accent-hover)); margin-right: 18px;" onclick="randomCopyFromPool(${pool.id})">随机复制</button>
+                    <button class="delete-pool-btn" style="background: linear-gradient(145deg, var(--accent-hover), var(--accent-color));" onclick="deletePool(${pool.id})">删除池</button>
+                    <button class="query-btn" style="background:linear-gradient(145deg,var(--accent-color),var(--accent-hover));margin-right:8px;" onclick="queryOrExcludePool(${pool.id},'query', this)">查询</button>
+                    <button class="exclude-btn" style="background:linear-gradient(145deg,var(--accent-hover),var(--accent-color));margin-right:8px;" onclick="queryOrExcludePool(${pool.id},'exclude', this)">排除</button>
+                    <button class="reset-pool-btn" style="background:linear-gradient(145deg,var(--accent-color),var(--accent-hover));margin-right:0;" onclick="resetPool(${pool.id}, this)">重置池</button>
                 </div>
             </div>`;
         }
