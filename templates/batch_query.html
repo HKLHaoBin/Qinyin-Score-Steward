@@ -6,6 +6,21 @@
     <title>千音雅集 - 批量查询</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <script>
+        // 立即设置深色主题，避免页面加载闪烁
+        (function() {
+            const storedTheme = localStorage.getItem('theme');
+            const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            // 默认使用深色模式，除非用户明确选择了浅色
+            if (storedTheme === 'light') {
+                document.documentElement.removeAttribute('data-theme');
+            } else if (storedTheme === 'dark' || (!storedTheme && systemDark)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+            // 如果没有存储主题且系统是浅色，保持默认（浅色）
+        })();
+    </script>
     <script src="/static/dark-mode.js"></script>
 </head>
 <body>
