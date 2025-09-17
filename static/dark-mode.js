@@ -2,8 +2,9 @@
 class DarkModeToggle {
     constructor() {
         this.themeToggleBtn = null;
-        this.currentTheme = this.getStoredTheme() || this.getSystemTheme();
+        this.currentTheme = this.getStoredTheme() || 'dark'; // 默认使用深色模式
         this.observer = null;
+        this.observerTimeout = null;
         this.init();
     }
 
@@ -80,12 +81,23 @@ class DarkModeToggle {
     }
 
     setupDOMObserver() {
-        // 监听DOM变化，确保动态生成的元素应用主题
+        // 监听DOM变化，确保动态生成的元素应用主题（优化版）
         this.observer = new MutationObserver((mutations) => {
+            let needsUpdate = false;
+
             for (const mutation of mutations) {
                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                    this.applyThemeToDynamicElements();
+                    needsUpdate = true;
+                    break;
                 }
+            }
+
+            if (needsUpdate) {
+                // 使用防抖避免频繁调用
+                clearTimeout(this.observerTimeout);
+                this.observerTimeout = setTimeout(() => {
+                    this.applyThemeToDynamicElements();
+                }, 50);
             }
         });
 
@@ -96,7 +108,14 @@ class DarkModeToggle {
     }
 
     applyThemeToDynamicElements() {
-        // 为动态生成的元素应用主题
+        // 为动态生成的元素应用主题（优化版）
+        const bgColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--bg-secondary').trim();
+        const textColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--text-primary').trim();
+        const borderColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--border-color').trim();
+
         const elementsToStyle = [
             '.toast',
             '.pool-card',
@@ -104,25 +123,27 @@ class DarkModeToggle {
             '.completion-filter',
             '.favorite-filter',
             '.stats-info',
-            '.stats-content',
+            '.stats-content span',
             '.completion-input'
         ];
 
         elementsToStyle.forEach(selector => {
-            document.querySelectorAll(selector).forEach(element => {
-                if (element.style.backgroundColor === '') {
-                    element.style.backgroundColor = getComputedStyle(document.documentElement)
-                        .getPropertyValue('--bg-secondary').trim();
+            const elements = document.querySelectorAll(selector);
+            for (const element of elements) {
+                const style = getComputedStyle(element);
+                if (style.backgroundColor === 'rgba(0, 0, 0, 0)' ||
+                    style.backgroundColor === 'transparent') {
+                    element.style.backgroundColor = bgColor;
                 }
-                if (element.style.color === '') {
-                    element.style.color = getComputedStyle(document.documentElement)
-                        .getPropertyValue('--text-primary').trim();
+                if (style.color === 'rgb(0, 0, 0)' ||
+                    style.color === 'rgba(0, 0, 0, 0)') {
+                    element.style.color = textColor;
                 }
-                if (element.style.borderColor === '') {
-                    element.style.borderColor = getComputedStyle(document.documentElement)
-                        .getPropertyValue('--border-color').trim();
+                if (style.borderColor === 'rgba(0, 0, 0, 0)' ||
+                    style.borderColor === 'transparent') {
+                    element.style.borderColor = borderColor;
                 }
-            });
+            }
         });
     }
 }
