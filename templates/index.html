@@ -6,6 +6,21 @@
     <title>千音雅集</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="/static/style.css">
+    <script>
+        // 立即设置深色主题，避免页面加载闪烁
+        (function() {
+            const storedTheme = localStorage.getItem('theme');
+            const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            // 默认使用深色模式，除非用户明确选择了浅色
+            if (storedTheme === 'light') {
+                document.documentElement.removeAttribute('data-theme');
+            } else if (storedTheme === 'dark' || (!storedTheme && systemDark)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+            // 如果没有存储主题且系统是浅色，保持默认（浅色）
+        })();
+    </script>
     <script src="/static/socket.io.js"></script>
     <script src="/static/script.js"></script>
     <script src="/static/dark-mode.js"></script>
