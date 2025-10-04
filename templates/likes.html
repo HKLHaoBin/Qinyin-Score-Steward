@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>我喜欢的谱子 · 千音雅集</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/static/style.css">
+  <script>
+    // 深色模式闪烁避免（复用你首页的策略）
+    (function() {
+      const stored = localStorage.getItem('theme');
+      const preferDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (stored === 'dark' || (!stored && preferDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else if (stored === 'light') {
+        document.documentElement.removeAttribute('data-theme');
+      }
+    })();
+  </script>
+  <style>
+    /* ===== Likes Page 精致样式，独立命名空间 likes-* ===== */
+
+    .likes-wrap {padding: 0 16px; }
+    .likes-header {
+      display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; margin-bottom:16px;
+    }
+    .likes-title { display:flex; align-items:center; gap:10px; }
+    .likes-title h1 { margin:0; font-size:22px; }
+    .likes-title .count { opacity:.7; font-size:14px; }
+
+    /* ==== 两栏布局：左侧悬浮栏 + 右侧自适应 ==== */
+    .likes-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr; /* 左 300px，右自适应 */
+      gap: 16px;
+      align-items: start;
+    }
+
+    /* 左侧：悬浮（跟随页面滚动到顶部后固定） */
+    .likes-sidebar {
+      position: sticky;
+      top: 16px;            /* 你页面头部与导航的预留空间 */
+      height: max-content;  /* 让容器刚好包住内容 */
+      z-index: 2;
+    }
+
+    /* 工具栏在侧栏里照常显示即可 */
+    .likes-toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--card-bg, #fff);
+      border: 1px solid var(--border, #e2e2e2);
+      padding: 12px;
+      border-radius: 12px;
+    }
+    .likes-search {
+      display:flex; align-items:center;;
+      background: var(--bg,#fff); border:1px solid var(--border,#e2e2e2); border-radius:10px; padding:8px 10px;
+    }
+    .likes-search input { flex:1; border:0; outline:none; background:transparent; color:var(--fg,#222); }
+    .likes-chipbar { display:flex; gap:6px; flex-wrap:wrap; }
+    .likes-chip {
+      border:1px solid var(--border,#e2e2e2); background:var(--bg,#fff); padding:6px 10px; border-radius:999px; cursor:pointer; font-size:13px;
+    }
+    .likes-chip.active { background: var(--accent,#3b82f6); color:#fff; border-color:transparent; }
+    .likes-toggle { display:flex; align-items:center; gap:6px; font-size:13px; }
+    .likes-select { border:1px solid var(--border,#e2e2e2); background:var(--bg,#fff); border-radius:10px; padding:6px 10px; }
+
+    /* 右侧内容区 */
+    .likes-main {
+      min-width: 0; /* 防止内容撑破 */
+    }
+
+    /* 网格卡片：在右侧区域自适应铺满 */
+    .likes-grid {
+      display:grid; gap:14px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+
+    /* 响应式：窄屏下改为上下结构（侧栏在上方） */
+    @media (max-width: 900px) {
+      .likes-layout {
+        grid-template-columns: 1fr;
+      }
+      .likes-sidebar {
+        position: static; /* 手机上不悬浮，避免遮挡 */
+      }
+    }
+    .likes-card {
+      background: var(--card-bg,#fff); border:1px solid var(--border,#e2e2e2);
+      border-radius:14px; padding:12px; box-shadow: 0 6px 20px rgba(0,0,0,.06);
+      transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+      display:flex; flex-direction:column; gap:10px;
+      cursor: pointer;
+    }
+    .likes-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.10); border-color: rgba(99,102,241,.28); }
+
+    .likes-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .likes-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:600; }
+    .likes-badges { display:flex; align-items:center; gap:6px; }
+    .badge {
+      border:1px solid var(--border,#e2e2e2); border-radius:999px; padding:2px 8px; font-size:12px; opacity:.9; background: var(--bg,#fff);
+    }
+    .badge.video { border-color: rgba(245,158,11,.55); }
+    .badge.fav  { border-color: rgba(99,102,241,.5); }
+
+    .stars { display:flex; gap:2px; font-size:16px; color: #f5b400; }
+    .comment {
+      font-size: 13px; line-height:1.5; opacity:.9; max-height: 60px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .likes-actions { display:flex; gap:8px; }
+    .btn {
+      border:1px solid var(--border,#e2e2e2); background: var(--bg,#fff); padding:6px 10px; border-radius:10px; cursor:pointer; font-size:13px;
+    }
+    .btn:hover { filter: brightness(0.98); }
+    .btn.primary { background: var(--accent,#3b82f6); color:#fff; border-color: transparent; }
+    .muted { opacity:.7; font-size:12px; }
+
+    /* skeleton */
+    .skeleton { position:relative; overflow:hidden; background:linear-gradient(90deg, rgba(0,0,0,.06), rgba(0,0,0,.12), rgba(0,0,0,.06)); background-size:200% 100%; animation:shimmer 1.2s infinite; border-radius:10px; }
+    @keyframes shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+
+    /* Modal（只读查看） */
+    .qyj-modal { position: fixed; inset: 0; display: none; }
+    .qyj-modal.is-open { display: block; }
+    .qyj-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); backdrop-filter: blur(2px); }
+    .qyj-modal__card {
+      position: relative; z-index:1; margin: 8vh auto 0; width: min(620px, 94vw);
+      background: var(--card-bg,#fff); color: var(--fg,#222);
+      border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.2);
+      padding: 16px;
+    }
+    .qyj-modal__header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+    .qyj-modal__close { border:0; background:transparent; font-size:18px; cursor:pointer; opacity:.8; }
+    .viewer-meta { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin: 6px 0 10px; }
+    .viewer-comment { white-space:pre-wrap; line-height:1.6; font-size:14px; opacity:.95; padding:10px; border:1px dashed var(--border,#e2e2e2); border-radius:10px; }
+    .viewer-video { width:100%; border-radius:12px; margin-top:10px; display:block; }
+    .viewer-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+  </style>
+</head>
+<body>
+  <div class="likes-wrap">
+    <div class="likes-header">
+      <div class="likes-title">
+        <h1>我喜欢的谱子</h1>
+        <span class="count" id="likesCount"></span>
+      </div>
+      <a href="/" class="btn">← 返回首页</a>
+    </div>
+
+    <div class="likes-layout">
+      <!-- 左侧悬浮侧栏 -->
+      <aside class="likes-sidebar">
+        <div class="likes-toolbar">
+          <div class="likes-search">
+            <span>🔎</span>
+            <input id="qInput" placeholder="按曲谱码或评语关键字搜索…">
+          </div>
+
+          <div class="likes-chipbar" id="ratingChips">
+            <button class="likes-chip active" data-val="0">全部评分</button>
+            <button class="likes-chip" data-val="5">≥ 5 星</button>
+            <button class="likes-chip" data-val="4">≥ 4 星</button>
+            <button class="likes-chip" data-val="3">≥ 3 星</button>
+          </div>
+
+          <label class="likes-toggle">
+            <input type="checkbox" id="videoOnly"> 仅看有视频
+          </label>
+
+          <select id="sortSelect" class="likes-select" title="排序">
+            <option value="latest">最新优先</option>
+            <option value="rating_desc">评分从高到低</option>
+            <option value="rating_asc">评分从低到高</option>
+          </select>
+
+          <button id="refreshBtn" class="btn">刷新</button>
+        </div>
+      </aside>
+
+      <!-- 右侧内容区：网格铺满 -->
+      <main class="likes-main">
+        <div id="likesGrid" class="likes-grid" aria-live="polite"></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 查看评价 Modal（只读） -->
+  <div id="viewerModal" class="qyj-modal" aria-hidden="true">
+    <div class="qyj-modal__backdrop" data-close></div>
+    <div class="qyj-modal__card" role="dialog" aria-modal="true" aria-labelledby="viewerTitle">
+      <div class="qyj-modal__header">
+        <h3 id="viewerTitle">评价详情</h3>
+        <button id="viewerClose" class="qyj-modal__close" aria-label="关闭">✕</button>
+      </div>
+      <div class="viewer-meta">
+        <span id="viewerCode" class="badge">-</span>
+        <span id="viewerStars" class="stars"></span>
+        <span id="viewerComp" class="badge">完成率 -</span>
+        <span id="viewerFav" class="badge fav">收藏 -</span>
+        <span id="viewerTime" class="muted"></span>
+      </div>
+      <div id="viewerComment" class="viewer-comment"></div>
+      <video id="viewerVideo" class="viewer-video" controls style="display:none;"></video>
+      <div class="viewer-actions">
+        <button id="viewerCopy" class="btn">复制曲谱码</button>
+        <button id="viewerClose2" class="btn primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+    const grid = $('#likesGrid');
+    const countEl = $('#likesCount');
+
+    const state = {
+      q: '', minRating: 0, videoOnly: false, sort: 'latest'
+    };
+
+    function setCount(n){ countEl.textContent = `（共 ${n} 首）`; }
+
+    function skeleton(n=8){
+      grid.innerHTML = '';
+      for(let i=0;i<n;i++){
+        const card = document.createElement('div');
+        card.className = 'likes-card';
+        card.innerHTML = `
+          <div class="likes-row"><div class="skeleton" style="width:40%;height:16px;"></div><div class="skeleton" style="width:28%;height:18px;"></div></div>
+          <div class="skeleton" style="width:80%;height:14px;"></div>
+          <div class="skeleton" style="width:100%;height:48px;"></div>
+          <div class="likes-row"><div class="skeleton" style="width:28%;height:28px;"></div><div class="skeleton" style="width:38%;height:28px;"></div></div>
+        `;
+        grid.appendChild(card);
+      }
+      setCount(0);
+    }
+
+    function toStars(n){
+      const k = Math.max(0, Math.min(5, Number(n)||0));
+      return '★'.repeat(k) + '☆'.repeat(5-k);
+    }
+
+    function copy(text){
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    }
+
+    function openViewer(item){
+      $('#viewerTitle').textContent = '评价详情';
+      $('#viewerCode').textContent = item.score_code;
+      $('#viewerStars').textContent = toStars(item.rating);
+      $('#viewerComp').textContent = '完成率 ' + (item.completion != null ? (item.completion + '%') : '-');
+      $('#viewerFav').textContent = '收藏 ' + (item.is_favorite ? '★' : '☆');
+      $('#viewerTime').textContent = new Date(item.created_at.replace(' ', 'T')).toLocaleString();
+      $('#viewerComment').textContent = item.comment || '（无评语）';
+      const v = $('#viewerVideo');
+      if (item.video_url){
+        v.src = item.video_url; v.style.display = 'block';
+      } else {
+        v.removeAttribute('src'); v.style.display = 'none';
+      }
+      $('#viewerModal').classList.add('is-open');
+      $('#viewerModal').setAttribute('aria-hidden','false');
+      $('#viewerCopy').onclick = () => copy(item.score_code);
+    }
+
+    function closeViewer(){
+      $('#viewerModal').classList.remove('is-open');
+      $('#viewerModal').setAttribute('aria-hidden','true');
+    }
+    $('#viewerClose')?.addEventListener('click', closeViewer);
+    $('#viewerClose2')?.addEventListener('click', closeViewer);
+    $('#viewerModal')?.addEventListener('click', (e)=>{ if(e.target.matches('[data-close]')) closeViewer(); });
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && $('#viewerModal').classList.contains('is-open')) closeViewer(); });
+
+    async function load(){
+      skeleton();
+      const p = new URLSearchParams();
+      if (state.q) p.set('q', state.q);
+      if (state.minRating) p.set('min_rating', state.minRating);
+      if (state.videoOnly) p.set('has_video', '1');
+      p.set('sort', state.sort);
+      p.set('limit', '200');
+      const resp = await fetch('/api/reviews/liked?' + p.toString());
+      const data = await resp.json();
+      if(!data.success){ grid.innerHTML = '<div class="muted">加载失败</div>'; return; }
+      const list = data.results || [];
+      setCount(list.length);
+      if(!list.length){ grid.innerHTML = '<div class="muted">还没有喜欢的谱子～ 去首页点 ❤️ 添加一条吧。</div>'; return; }
+
+      grid.innerHTML = '';
+      list.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'likes-card';
+        card.innerHTML = `
+          <div class="likes-row">
+            <div class="likes-code">${item.score_code}</div>
+            <div class="stars" title="${item.rating} 星">${toStars(item.rating)}</div>
+          </div>
+          <div class="likes-row">
+            <div class="likes-badges">
+              ${item.video_url ? '<span class="badge video">🎬 视频</span>' : ''}
+              ${item.is_favorite ? '<span class="badge fav">★ 已收藏</span>' : ''}
+              <span class="badge">完成率 ${item.completion != null ? (item.completion + '%') : '-'}</span>
+            </div>
+            <div class="muted">${new Date(item.created_at.replace(' ','T')).toLocaleDateString()}</div>
+          </div>
+          <div class="comment" title="${(item.comment||'').replace(/"/g,'&quot;')}">${item.comment || '（无评语）'}</div>
+          <div class="likes-actions">
+            <button class="btn" data-act="copy">复制曲谱码</button>
+            <button class="btn primary" data-act="view">查看评价</button>
+          </div>
+        `;
+        // 点击整卡也可以查看
+        card.addEventListener('click', (e)=>{
+          const act = e.target?.dataset?.act;
+          if (act === 'copy') { copy(item.score_code); e.stopPropagation(); }
+          else { openViewer(item); }
+        });
+        grid.appendChild(card);
+      });
+    }
+
+    // 绑定工具栏
+    $('#refreshBtn').addEventListener('click', load);
+    $('#qInput').addEventListener('input', (e)=>{ state.q = e.target.value.trim(); load(); });
+    $('#videoOnly').addEventListener('change', (e)=>{ state.videoOnly = e.target.checked; load(); });
+    $('#sortSelect').addEventListener('change', (e)=>{ state.sort = e.target.value; load(); });
+
+    // 评分 chip
+    Array.from(document.querySelectorAll('#ratingChips .likes-chip')).forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.querySelectorAll('#ratingChips .likes-chip').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        state.minRating = parseInt(btn.dataset.val);
+        load();
+      });
+    });
+
+    // 初始加载
+    load();
+  </script>
+</body>
+</html>

@@ -1160,6 +1160,116 @@ def get_review(score_code):
         'created_at': row[3],
     })
 
+# ========= 喜欢列表 API =========
+
+@app.route('/likes')
+def likes_page():
+    # 渲染专用页面
+    return render_template('likes.html')
+
+
+@app.route('/api/reviews/liked', methods=['GET'])
+def list_liked_reviews():
+    """
+    返回"已喜欢（有评价）"的谱子列表（每个谱子取最新一条评价）
+    支持筛选：
+      - q: 关键字（匹配 score_code / comment）
+      - min_rating: 最低评分 1-5
+      - has_video: 1 只要有视频，0/缺省不过滤
+      - sort: latest(默认) / rating_desc / rating_asc
+      - limit / offset: 分页，默认 100 / 0
+    """
+    try:
+        q = (request.args.get('q') or '').strip()
+        min_rating = request.args.get('min_rating', type=int)
+        has_video = request.args.get('has_video', type=int)
+        sort = (request.args.get('sort') or 'latest').lower()
+        limit = request.args.get('limit', default=100, type=int)
+        offset = request.args.get('offset', default=0, type=int)
+
+        # 1) 取每个 score_code 最新的一条 review
+        conn_r = sqlite3.connect('reviews.db')
+        cr = conn_r.cursor()
+
+        where = []
+        params = []
+
+        if min_rating is not None:
+            where.append('r.rating >= ?')
+            params.append(min_rating)
+
+        if has_video == 1:
+            where.append('r.video_path IS NOT NULL AND r.video_path <> ""')
+
+        if q:
+            where.append('(r.score_code LIKE ? OR r.comment LIKE ?)')
+            params.extend([f'%{q}%', f'%{q}%'])
+
+        where_sql = (' WHERE ' + ' AND '.join(where)) if where else ''
+
+        order_sql = 'ORDER BY r.created_at DESC'
+        if sort == 'rating_desc':
+            order_sql = 'ORDER BY r.rating DESC, r.created_at DESC'
+        elif sort == 'rating_asc':
+            order_sql = 'ORDER BY r.rating ASC, r.created_at DESC'
+
+        sql = f'''
+            SELECT r.score_code, r.rating, r.comment, r.video_path, r.created_at
+            FROM reviews r
+            JOIN (
+                SELECT score_code, MAX(created_at) AS latest_time
+                FROM reviews
+                GROUP BY score_code
+            ) lr ON r.score_code = lr.score_code AND r.created_at = lr.latest_time
+            {where_sql}
+            {order_sql}
+            LIMIT ? OFFSET ?
+        '''
+        params_ext = params + [limit, offset]
+        cr.execute(sql, params_ext)
+        rows = cr.fetchall()
+        conn_r.close()
+
+        # 2) 取这些谱子的最新完成率 & 收藏态（scores.db）
+        codes = [r[0] for r in rows]
+        completion_map = {}
+        favorite_map = {}
+        if codes:
+            conn_s = sqlite3.connect('scores.db')
+            cs = conn_s.cursor()
+            ph = ','.join(['?'] * len(codes))
+            cs.execute(f'''
+                SELECT s.score_code, s.completion, s.is_favorite
+                FROM scores s
+                JOIN (
+                    SELECT score_code, MAX(created_at) AS latest_time
+                    FROM scores
+                    GROUP BY score_code
+                ) ls ON s.score_code = ls.score_code AND s.created_at = ls.latest_time
+                WHERE s.score_code IN ({ph})
+            ''', codes)
+            for code, comp, fav in cs.fetchall():
+                completion_map[code] = comp
+                favorite_map[code] = bool(fav)
+            conn_s.close()
+
+        # 3) 拼装返回
+        data = []
+        for code, rating, comment, video_path, created_at in rows:
+            data.append({
+                'score_code': code,
+                'rating': rating,
+                'comment': comment or '',
+                'video_url': video_path,
+                'created_at': created_at,
+                'completion': completion_map.get(code),
+                'is_favorite': favorite_map.get(code, False)
+            })
+
+        return jsonify({'success': True, 'results': data})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
     # 启动时备份数据库
     backup_database()
