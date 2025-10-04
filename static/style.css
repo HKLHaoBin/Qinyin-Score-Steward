@@ -322,7 +322,37 @@ h1 {
     font-size: 1.5em;
     padding: 5px;
     color: #ffc107;
-    cursor: default;
+    cursor: pointer;
+    background: none;
+    border: none;
+    vertical-align: middle;
+    line-height: 1;
+    min-width: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.review-btn {
+    font-size: 1.5em;
+    padding: 5px;
+    color: #ff6b6b;
+    cursor: pointer;
+    background: none;
+    border: none;
+    vertical-align: middle;
+    line-height: 1;
+    min-width: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.action-buttons {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    vertical-align: middle;
 }
 .history-list {
     margin-top: 20px;
@@ -832,6 +862,107 @@ h1 {
     color: #ffffff;
     border-color: #4b4b4b;
 }
+
+/* —— Modal 基础 —— */
+.qyj-modal { position: fixed; inset: 0; display: none; }
+.qyj-modal.is-open { display: block; }
+.qyj-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); backdrop-filter: blur(2px); }
+.qyj-modal__card {
+  position: relative; z-index: 1; margin: 7vh auto 0; width: min(560px, 94vw);
+  background: var(--card-bg,#fff); color: var(--fg,#222);
+  border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.2);
+  padding: 16px 16px 14px; animation: qyj-pop .16s ease-out;
+}
+@keyframes qyj-pop { from { transform: translateY(8px); opacity:.6; } to { transform:none; opacity:1; } }
+
+.qyj-modal__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.qyj-modal__close {
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: .8;
+  padding: 4px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+.qyj-modal__close:hover {
+  opacity: 1;
+  background-color: rgba(0,0,0,0.1);
+}
+
+.qyj-field { margin: 12px 0; }
+.qyj-label { display:block; margin-bottom: 6px; font-weight: 600; opacity: .9; }
+
+.qyj-textarea {
+  width: 100%; border: 1px solid var(--border,#e2e2e2); background: var(--bg,#fff);
+  border-radius: 10px; padding: 10px 12px; resize: vertical; min-height: 84px;
+}
+.qyj-textarea:focus { outline: 2px solid var(--focus,#9bbcff); border-color: transparent; }
+
+/* —— Stars —— */
+.qyj-stars { display: inline-flex; gap: 6px; user-select: none; }
+.qyj-star {
+  font-size: 26px; line-height: 1; cursor: pointer; border: 0; background: transparent; padding: 4px 2px;
+  transition: transform .06s ease, text-shadow .12s ease;
+}
+.qyj-star:hover { transform: scale(1.1); text-shadow: 0 0 10px rgba(255,200,0,.45); }
+.qyj-star.is-active { text-shadow: 0 0 8px rgba(255,185,0,.35); }
+
+/* —— File —— */
+.qyj-file { display: inline-flex; align-items: center; gap: 10px; }
+.qyj-file input[type=file] { display: none; }
+.qyj-file__btn {
+  display:inline-flex; align-items:center; justify-content:center; padding: 8px 12px; border-radius: 10px;
+  background: var(--btn-bg,#f2f3f5); border: 1px solid var(--border,#e2e2e2); cursor: pointer;
+}
+.qyj-file__btn:hover { filter: brightness(0.98); }
+.qyj-file__name { opacity: .8; }
+
+.qyj-tip { padding: 10px 12px; background: var(--tip-bg, rgba(138,180,248,.15)); border: 1px dashed var(--tip-border, rgba(138,180,248,.6)); border-radius: 10px; }
+.qyj-tip-sm { margin-top: 6px; font-size: 12px; opacity: .7; }
+
+.qyj-modal__actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+.qyj-btn { border: 0; padding: 9px 14px; border-radius: 10px; cursor: pointer; }
+.qyj-btn--ghost { background: transparent; border: 1px solid var(--border,#e2e2e2); }
+.qyj-btn--ghost:hover { background: rgba(0,0,0,.04); }
+.qyj-btn--primary { background: var(--accent,#3b82f6); color: #fff; }
+.qyj-btn--primary:hover { filter: brightness(1.05); }
+.qyj-msg { margin-top: 6px; min-height: 1em; font-size: 13px; opacity: .9; }
+
+/* —— Toast —— */
+.qyj-toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(10px);
+  background: rgba(0,0,0,.78); color: #fff; padding: 8px 12px; border-radius: 10px; font-size: 13px;
+  opacity: 0; pointer-events: none; transition: all .16s ease;
+}
+.qyj-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* 深色主题适配（沿用你现有 data-theme: dark） */
+:root[data-theme="dark"] {
+  --card-bg: #121417;
+  --fg: #e7e7e7;
+  --bg: #0e1114;
+  --border: #2a2f36;
+  --btn-bg: #181c21;
+  --tip-bg: rgba(56,135,255,.12);
+  --tip-border: rgba(104,164,255,.5);
+  --accent: #4f86ff;
+  --focus: #2f66ff;
+}
+
+/* 评价只读态 */
+.qyj-textarea[readonly] {
+  background-color: var(--bg-secondary);
+  cursor: default;
+  opacity: .95;
+}
+.qyj-stars[aria-disabled="true"] .qyj-star { cursor: default; transform: none !important; text-shadow: none !important; }
 
 .random-info-card {
     margin-top: 12px;

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import sqlite3
 import os
 import pyperclip
@@ -14,9 +14,19 @@ import pyperclip
 import json
 import requests
 import webbrowser
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
+
+# —— 上传配置 ——
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads', 'videos')
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB 上限（按需调整）
+ALLOWED_VIDEO_EXTS = {'mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv'}
+
+def allowed_video(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTS
 
 # 全局变量
 jianshang_api_url = "https://act-hk4e-api.miyoushe.com/event/musicugc/v1/second_page"
@@ -140,12 +150,33 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
+    conn.commit()
+    conn.close()
+
+def init_reviews_db():
+    conn = sqlite3.connect('reviews.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            score_code TEXT NOT NULL,
+            rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+            comment TEXT,
+            video_path TEXT,
+            is_top BOOLEAN DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_reviews_score ON reviews(score_code)')
     conn.commit()
     conn.close()
 
 # 初始化数据库
 init_db()
+
+# 初始化评价数据库
+init_reviews_db()
 
 # ========== API爬虫相关函数 ==========
 
@@ -256,20 +287,28 @@ def check_clipboard():
                 if is_valid_score_code(current_content):
                     print(f"检测到有效曲谱码: {current_content}")
                     current_score_code = current_content
-                    # 检查数据库中是否存在该曲谱码
+                    # 检查数据库中是否存在该曲谱码（原有）
                     conn = sqlite3.connect('scores.db')
                     c = conn.cursor()
                     c.execute('SELECT completion, is_favorite FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (current_content,))
                     result = c.fetchone()
                     conn.close()
-                    
-                    # 发送曲谱码到前端
+
+                    # 新增：检查是否有评价（喜欢）
+                    conn_r = sqlite3.connect('reviews.db')
+                    cr = conn_r.cursor()
+                    cr.execute('SELECT 1 FROM reviews WHERE score_code = ? LIMIT 1', (current_content,))
+                    has_review = cr.fetchone() is not None
+                    conn_r.close()
+
+                    # 发送曲谱码到前端（新增 has_review）
                     socketio.emit('clipboard_update', {
                         'type': 'score_code',
                         'score_code': current_content,
                         'exists': bool(result),
                         'completion': result[0] if result else None,
-                        'is_favorite': result[1] if result else False
+                        'is_favorite': result[1] if result else False,
+                        'has_review': has_review
                     })
                     print(f"已发送曲谱码到前端: {current_content}")
             retry_count = 0  # 重置重试计数
@@ -301,6 +340,10 @@ def check_thread_status():
 
 # 在启动后检查线程状态
 check_thread_status()
+
+@app.route('/uploads/videos/<path:filename>')
+def serve_uploaded_video(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=False)
 
 @app.route('/')
 def index():
@@ -983,11 +1026,119 @@ def reset_pool(pool_id):
 def random_pool():
     return render_template('random_pool.html')
 
+@app.route('/api/reviews', methods=['POST'])
+def create_review():
+    try:
+        # 支持 multipart/form-data
+        # 必填：score_code, rating(1-5)
+        score_code = request.form.get('score_code', '').strip()
+        rating_raw = request.form.get('rating', '').strip()
+        comment = (request.form.get('comment') or '').strip()
+        is_top_raw = (request.form.get('is_top') or '').strip()
+        video = request.files.get('video')
+
+        # 校验
+        if not is_valid_score_code(score_code):
+            return jsonify({'success': False, 'error': '无效的曲谱码'}), 400
+
+        if not comment:
+            return jsonify({'success': False, 'error': '评语不能为空'}), 400
+
+        try:
+            rating = int(rating_raw)
+            if rating < 1 or rating > 5:
+                raise ValueError()
+        except Exception:
+            return jsonify({'success': False, 'error': '评分必须是 1-5 的整数'}), 400
+
+        # 校验视频文件
+        if not video or not video.filename:
+            return jsonify({'success': False, 'error': '请上传视频文件'}), 400
+
+        is_top = (is_top_raw.lower() in ('1', 'true', 'on', 'yes'))
+
+        # 保存视频（必填）
+        saved_rel_url = None
+        if video and video.filename:
+            if not allowed_video(video.filename):
+                return jsonify({'success': False, 'error': '不支持的视频格式'}), 400
+            safe_name = secure_filename(video.filename)
+            # 防重名：前缀曲谱码与时间戳
+            final_name = f"{score_code}_{int(time.time())}_{safe_name}"
+            dst_path = os.path.join(app.config['UPLOAD_FOLDER'], final_name)
+            video.save(dst_path)
+            # 前端可直接访问的相对 URL
+            saved_rel_url = f"/uploads/videos/{final_name}"
+
+        # 入库
+        conn = sqlite3.connect('reviews.db')
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO reviews (score_code, rating, comment, video_path, is_top)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (score_code, rating, comment, saved_rel_url, 1 if is_top else 0))
+        conn.commit()
+        new_id = c.lastrowid
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'id': new_id,
+            'score_code': score_code,
+            'rating': rating,
+            'comment': comment,
+            'video_url': saved_rel_url,
+            'is_top': is_top
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/reviews/status')
+def review_status():
+    score_code = (request.args.get('score_code') or '').strip()
+    if not is_valid_score_code(score_code):
+        return jsonify({'success': False, 'error': '无效的曲谱码'}), 400
+    conn = sqlite3.connect('reviews.db')
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM reviews WHERE score_code = ? LIMIT 1', (score_code,))
+    has = c.fetchone() is not None
+    conn.close()
+    return jsonify({'success': True, 'has_review': has})
+
+
+@app.route('/api/reviews/<score_code>', methods=['GET'])
+def get_review(score_code):
+    if not is_valid_score_code(score_code):
+        return jsonify({'success': False, 'error': '无效的曲谱码'}), 400
+    conn = sqlite3.connect('reviews.db')
+    c = conn.cursor()
+    c.execute('''
+        SELECT rating, comment, video_path, created_at
+        FROM reviews
+        WHERE score_code = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    ''', (score_code,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'success': True, 'has_review': False})
+    return jsonify({
+        'success': True,
+        'has_review': True,
+        'score_code': score_code,
+        'rating': row[0],
+        'comment': row[1] or '',
+        'video_url': row[2],
+        'created_at': row[3],
+    })
+
 if __name__ == '__main__':
     # 启动时备份数据库
     backup_database()
-    
+
     print("千音雅集服务器启动 - 使用API爬虫模式")
-    
+
     # 直接启动服务器（不使用线程）
     start_server()

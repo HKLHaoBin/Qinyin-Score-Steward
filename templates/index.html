@@ -38,7 +38,10 @@
             <div class="current-status">
                 <p>当前状态：<span id="currentStatus">等待曲谱码...</span></p>
                 <p>曲谱码：<span id="currentScoreCode" class="score-code">-</span>
-                   <button id="favoriteBtn" class="favorite-btn" style="display: none;">☆</button>
+                   <span class="action-buttons">
+                     <button id="favoriteBtn" class="favorite-btn" style="display: none;">☆</button>
+                     <button id="reviewBtn" class="review-btn" style="display: none;">🩶</button>
+                   </span>
                 </p>
                 <p>完成率：<span id="currentCompletion" class="completion">-</span></p>
                 <div class="input-group">
@@ -53,6 +56,65 @@
             <h2>历史记录</h2>
             <div id="historyList"></div>
         </div>
+    </div>
+
+    <!-- 评价弹窗（替换整块） -->
+    <div id="reviewModal" class="qyj-modal" aria-hidden="true">
+      <div class="qyj-modal__backdrop" data-close-modal></div>
+      <div class="qyj-modal__card" role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+        <div class="qyj-modal__header">
+          <h3 id="reviewTitle">添加评价</h3>
+          <button class="qyj-modal__close" id="reviewCloseBtn" aria-label="关闭">✕</button>
+        </div>
+
+        <!-- 1) 五星打分 -->
+        <div class="qyj-field">
+          <label class="qyj-label">打分</label>
+          <div id="starGroup" class="qyj-stars" role="radiogroup" aria-label="喜欢程度 1 到 5 星">
+            <button type="button" class="qyj-star" data-val="1" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="2" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="3" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="4" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="5" aria-checked="true"  role="radio">☆</button>
+            <input type="hidden" id="reviewRating" value="5">
+          </div>
+        </div>
+
+        <!-- 2) 评语 -->
+        <div class="qyj-field">
+          <label class="qyj-label" for="reviewComment">评语（为什么喜欢？） *</label>
+          <textarea id="reviewComment" rows="4" class="qyj-textarea" placeholder="这一段最打动我的是…" required></textarea>
+        </div>
+
+        <!-- 3) 上传视频 -->
+        <div class="qyj-field" id="reviewFileRow">
+          <label class="qyj-label" for="reviewVideo">上传实录视频 *</label>
+          <label class="qyj-file">
+            <input type="file" id="reviewVideo" accept=".mp4,.mov,.m4v,.webm,.avi,.mkv" required>
+            <span class="qyj-file__btn">选择文件</span>
+            <span class="qyj-file__name" id="videoFileName">未选择文件</span>
+          </label>
+          <div class="qyj-tip-sm">支持 mp4 / mov / webm / avi / mkv；文件较大会花更久时间。</div>
+        </div>
+
+        <!-- 视频预览（仅查看模式显示） -->
+        <div class="qyj-field" id="reviewPreviewRow" style="display:none;">
+          <label class="qyj-label">视频预览</label>
+          <video id="reviewVideoPreview" controls style="width:100%; border-radius:10px; outline: none;"></video>
+        </div>
+
+        <!-- 4) 提示 -->
+        <div class="qyj-tip">
+          提示：这是对一个谱子的最高评价。<br>
+          带 * 号的为必填项：评语和视频都必须填写。
+        </div>
+
+        <div class="qyj-modal__actions">
+          <button id="reviewCancelBtn" class="qyj-btn qyj-btn--ghost">取消</button>
+          <button id="reviewSubmitBtn" class="qyj-btn qyj-btn--primary">保存评价</button>
+        </div>
+        <div id="reviewMsg" class="qyj-msg" aria-live="polite"></div>
+      </div>
     </div>
 </body>
 </html> 
