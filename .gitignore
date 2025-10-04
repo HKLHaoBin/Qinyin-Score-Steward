@@ -20,11 +20,19 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# 大文件和可执行文件
 千音雅集工具/
+千音雅集工具/**
 程序封装.zip
 封装为EXE的千音雅集.zip
 千音雅集工具.zip
+*.exe
+*.zip
+
+# 老的评分代码文件
 The old appreciation code/
+
 # 虚拟环境
 venv/
 ENV/
