@@ -75,7 +75,7 @@
                             </div>
                         </th>
                         <th class="favorite-header">
-                            收藏
+                            收藏/喜欢
                             <div class="favorite-filter">
                                 <button id="favoriteFilterBtn">全部</button>
                             </div>
@@ -86,10 +86,64 @@
             </table>
         </div>
     </div>
+
+    <!-- 评价弹窗（批量页复用） -->
+    <div id="reviewModal" class="qyj-modal" aria-hidden="true">
+      <div class="qyj-modal__backdrop" data-close-modal></div>
+      <div class="qyj-modal__card" role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+        <div class="qyj-modal__header">
+          <h3 id="reviewTitle">添加评价</h3>
+          <button class="qyj-modal__close" id="reviewCloseBtn" aria-label="关闭">✕</button>
+        </div>
+
+        <!-- 1) 五星打分 -->
+        <div class="qyj-field">
+          <label class="qyj-label">打分</label>
+          <div id="starGroup" class="qyj-stars" role="radiogroup" aria-label="喜欢程度 1 到 5 星">
+            <button type="button" class="qyj-star" data-val="1" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="2" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="3" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="4" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="5" aria-checked="true"  role="radio">☆</button>
+            <input type="hidden" id="reviewRating" value="5">
+          </div>
+        </div>
+
+        <!-- 2) 评语 -->
+        <div class="qyj-field">
+          <label class="qyj-label" for="reviewComment">评语（为什么喜欢？）</label>
+          <textarea id="reviewComment" rows="4" class="qyj-textarea" placeholder="这一段最打动我的是…"></textarea>
+        </div>
+
+        <!-- 3) 上传视频 -->
+        <div class="qyj-field" id="reviewFileRow">
+          <label class="qyj-label" for="reviewVideo">上传实录视频</label>
+          <label class="qyj-file">
+            <input type="file" id="reviewVideo" accept=".mp4,.mov,.m4v,.webm,.avi,.mkv">
+            <span class="qyj-file__btn">选择文件</span>
+            <span class="qyj-file__name" id="videoFileName">未选择文件</span>
+          </label>
+          <div class="qyj-tip-sm">支持 mp4 / mov / webm / avi / mkv。</div>
+        </div>
+
+        <!-- 查看模式的视频预览 -->
+        <div class="qyj-field" id="reviewPreviewRow" style="display:none;">
+          <label class="qyj-label">视频预览</label>
+          <video id="reviewVideoPreview" controls style="width:100%; border-radius:10px;"></video>
+        </div>
+
+        <!-- 4) 提示 -->
+        <div class="qyj-tip">提示：这是对一个谱子的最高评价。</div>
+
+        <div class="qyj-modal__actions">
+          <button id="reviewCancelBtn" class="qyj-btn qyj-btn--ghost">取消</button>
+          <button id="reviewSubmitBtn" class="qyj-btn qyj-btn--primary">保存评价</button>
+        </div>
+        <div id="reviewMsg" class="qyj-msg" aria-live="polite"></div>
+      </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="{{ url_for('static', filename='batch_query.js') }}"></script>
-    <script>
-    
-    </script>
 </body>
 </html> 

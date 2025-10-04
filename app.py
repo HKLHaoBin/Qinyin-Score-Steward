@@ -386,15 +386,27 @@ def get_scores():
         query += ' ORDER BY created_at DESC'
         
         c.execute(query, params)
-        scores = c.fetchall()
+        rows = c.fetchall()
         conn.close()
-        
+
+        # —— 新增：批量查询这些 code 是否有评价 ——
+        codes = [r[0] for r in rows]
+        has_map = set()
+        if codes:
+            conn_r = sqlite3.connect('reviews.db')
+            cr = conn_r.cursor()
+            placeholders = ','.join(['?']*len(codes))
+            cr.execute(f'SELECT DISTINCT score_code FROM reviews WHERE score_code IN ({placeholders})', codes)
+            has_map = {t[0] for t in cr.fetchall()}
+            conn_r.close()
+
         return jsonify([{
             'score_code': s[0],
             'completion': s[1],
             'is_favorite': bool(s[2]),
-            'created_at': s[3]
-        } for s in scores])
+            'created_at': s[3],
+            'has_review': s[0] in has_map   # ★ 新增字段
+        } for s in rows])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -587,6 +599,20 @@ def batch_query_scores():
                     results = [r for r in results if not r['is_favorite']]
             except:
                 pass
+
+        # —— 新增：批量查询喜欢 ——
+        all_codes = [r['score_code'] for r in results]
+        has_map = set()
+        if all_codes:
+            conn_r = sqlite3.connect('reviews.db')
+            cr = conn_r.cursor()
+            placeholders = ','.join(['?']*len(all_codes))
+            cr.execute(f'SELECT DISTINCT score_code FROM reviews WHERE score_code IN ({placeholders})', all_codes)
+            has_map = {t[0] for t in cr.fetchall()}
+            conn_r.close()
+
+        for r in results:
+            r['has_review'] = r['score_code'] in has_map  # ★ 新增字段
 
         return jsonify({
             'success': True,
