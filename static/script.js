@@ -53,7 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 statsDiv.innerHTML = `
                     <div class="stats-content">
                         <span>总记录数：${stats.total_records} 条</span>
-                        <span>不同歌曲：${stats.unique_songs} 首</span>
                         <span>收藏歌曲：${stats.favorite_songs} 首</span>
                     </div>
                 `;

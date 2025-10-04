@@ -13,6 +13,7 @@ import socket
 import pyperclip
 import json
 import requests
+import webbrowser
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
@@ -455,19 +456,14 @@ def get_stats():
         c.execute('SELECT COUNT(*) FROM scores')
         total_records = c.fetchone()[0]
         
-        # 获取不同曲谱码数量
-        c.execute('SELECT COUNT(DISTINCT score_code) FROM scores')
-        unique_songs = c.fetchone()[0]
-        
         # 获取收藏歌曲数
         c.execute('SELECT COUNT(DISTINCT score_code) FROM scores WHERE is_favorite = 1')
         favorite_songs = c.fetchone()[0]
-        
+
         conn.close()
-        
+
         return jsonify({
             'total_records': total_records,
-            'unique_songs': unique_songs,
             'favorite_songs': favorite_songs
         })
     except Exception as e:
@@ -745,15 +741,28 @@ def start_server():
     import socket
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    
+
     # 检查端口是否被占用
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(('0.0.0.0', 6605))
         sock.close()
         # 端口可用，启动服务器
-        pyperclip.copy(f"http://{local_ip}:6605")
-        print(f"服务器启动在: http://{local_ip}:6605 (已复制到剪贴板)")
+        url = f"http://{local_ip}:6605"
+        pyperclip.copy(url)
+        print(f"服务器启动在: {url} (已复制到剪贴板)")
+        # 自动打开浏览器并访问剪贴板中的URL
+        try:
+            clipboard_content = pyperclip.paste()
+            if clipboard_content.startswith('http'):
+                print(f"正在打开浏览器访问: {clipboard_content}")
+                webbrowser.open(clipboard_content)
+            else:
+                print("剪贴板中没有有效的URL，打开默认地址")
+                webbrowser.open(url)
+        except Exception as e:
+            print(f"无法自动打开浏览器: {e}")
+            print("请手动打开浏览器并访问:", url)
         socketio.run(app, host='0.0.0.0', port=6605, debug=False, allow_unsafe_werkzeug=True)
     except OSError as e:
         print(f"端口6605被占用，尝试使用其他端口: {e}")
@@ -764,8 +773,21 @@ def start_server():
                 sock.bind(('0.0.0.0', port))
                 sock.close()
                 print(f"使用备用端口: {port}")
-                pyperclip.copy(f"http://{local_ip}:{port}")
-                print(f"服务器启动在: http://{local_ip}:{port} (已复制到剪贴板)")
+                url = f"http://{local_ip}:{port}"
+                pyperclip.copy(url)
+                print(f"服务器启动在: {url} (已复制到剪贴板)")
+                # 自动打开浏览器并访问剪贴板中的URL
+                try:
+                    clipboard_content = pyperclip.paste()
+                    if clipboard_content.startswith('http'):
+                        print(f"正在打开浏览器访问: {clipboard_content}")
+                        webbrowser.open(clipboard_content)
+                    else:
+                        print("剪贴板中没有有效的URL，打开默认地址")
+                        webbrowser.open(url)
+                except Exception as e:
+                    print(f"无法自动打开浏览器: {e}")
+                    print("请手动打开浏览器并访问:", url)
                 socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
                 break
             except OSError:

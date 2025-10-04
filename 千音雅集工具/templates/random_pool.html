@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>随机池管理</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <script>
+        // 立即设置深色主题，避免页面加载闪烁
+        (function() {
+            const storedTheme = localStorage.getItem('theme');
+            const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            // 默认使用深色模式，除非用户明确选择了浅色
+            if (storedTheme === 'light') {
+                document.documentElement.removeAttribute('data-theme');
+            } else if (storedTheme === 'dark' || (!storedTheme && systemDark)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+            // 如果没有存储主题且系统是浅色，保持默认（浅色）
+        })();
+    </script>
+    <script src="/static/dark-mode.js"></script>
+    <style>
+        body { background-color: var(--bg-primary); }
+        .container { max-width: 900px; margin: 30px auto; background-color: var(--bg-secondary); border-radius: 18px; box-shadow: 0 4px 24px var(--shadow-color); padding: 32px 24px; }
+        h1 { text-align: center; margin-bottom: 1.5em; letter-spacing: 2px; color: var(--header-color); }
+        .create-pool-area { background-color: var(--card-bg); border-radius: 12px; padding: 18px 20px 14px 20px; margin-bottom: 2em; box-shadow: 0 2px 8px var(--shadow-color); border: 1px solid var(--border-color); }
+        .create-pool-area h2 { margin-top: 0; font-size: 1.15em; color: var(--header-color); }
+        .create-pool-area input, .create-pool-area select, .create-pool-area textarea {
+            border: 1px solid var(--border-color); border-radius: 7px; padding: 6px 10px; margin: 4px 6px 8px 0; font-size: 1em; transition: border 0.2s; outline: none; background-color: var(--input-bg); color: var(--text-primary);
+        }
+        .create-pool-area input:focus, .create-pool-area select:focus, .create-pool-area textarea:focus {
+            border: 1.5px solid var(--accent-color);
+        }
+        .create-pool-area button {
+            background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-hover) 100%); color: var(--text-primary); border: none; border-radius: 7px; padding: 7px 22px; font-size: 1em; cursor: pointer; box-shadow: 0 2px 8px var(--shadow-color); transition: background 0.2s, box-shadow 0.2s;
+        }
+        .create-pool-area button:hover {
+            background: linear-gradient(90deg, var(--accent-hover) 0%, var(--accent-color) 100%); box-shadow: 0 4px 16px var(--shadow-color);
+        }
+        .pool-list { margin-top: 2em; }
+        .pool-card {
+            border: 1.5px solid var(--border-color); border-radius: 16px; padding: 1.2em 1.5em; margin-bottom: 2em;
+            background-color: var(--card-bg); box-shadow: 0 4px 18px rgba(76,140,255,0.07), 0 1.5px 0 var(--border-color);
+            transition: box-shadow 0.2s, border 0.2s;
+        }
+        .pool-card:hover {
+            box-shadow: 0 8px 32px rgba(76,140,255,0.13), 0 2px 0 var(--border-color);
+            border: 1.5px solid var(--accent-color);
+        }
+        .pool-title { font-weight: bold; font-size: 1.18em; color: var(--header-color); margin-bottom: 0.2em; }
+        .filter-desc { color: var(--text-secondary); font-size: 0.98em; margin-bottom: 0.5em; }
+        .pool-table-area { overflow-x: auto; }
+        .pool-table {
+            width: 100%; border-collapse: separate; border-spacing: 0; background-color: var(--bg-secondary); border-radius: 10px; overflow: hidden;
+            box-shadow: 0 2px 8px rgba(76,140,255,0.04);
+        }
+        .pool-table th, .pool-table td {
+            padding: 8px 10px; text-align: center; font-size: 1em; color: var(--text-primary);
+        }
+        .pool-table th {
+            background-color: var(--table-header-bg); color: var(--header-color); font-weight: 600; border-bottom: 2px solid var(--border-color);
+        }
+        .pool-table tr {
+            transition: background 0.18s;
+        }
+        .pool-table tr:hover {
+            background-color: var(--table-hover);
+        }
+        .completion-cell, .favorite-cell {
+            cursor: pointer; border-radius: 6px; transition: background 0.18s, color 0.18s;
+        }
+        .completion-cell:hover {
+            background: var(--table-hover); color: var(--accent-color);
+        }
+        .favorite-cell {
+            font-size: 1.25em; transition: color 0.18s;
+        }
+        .favorite-cell:hover {
+            color: var(--accent-color);
+        }
+        .pool-actions { margin-top: 0.7em; }
+        .pool-actions button {
+            background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-hover) 100%); color: white; border: none; border-radius: 7px; padding: 7px 18px; font-size: 1em; cursor: pointer; margin-right: 10px; box-shadow: 0 2px 8px rgba(76,140,255,0.08); transition: background 0.2s, box-shadow 0.2s;
+        }
+        .pool-actions button:hover {
+            background: linear-gradient(90deg, var(--accent-hover) 0%, var(--accent-color) 100%); box-shadow: 0 4px 16px var(--shadow-color);
+        }
+        .toast {
+            position: fixed; left: 50%; top: 10%; transform: translateX(-50%); background-color: var(--card-bg); color: var(--text-primary); padding: 10px 28px; border-radius: 8px; font-size: 1.08em; opacity: 0; pointer-events: none; z-index: 9999; transition: opacity 0.3s, top 0.3s; border: 1px solid var(--border-color);
+        }
+        .toast.show { opacity: 1; top: 5%; pointer-events: auto; }
+        
+        .random-info-card {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: var(--bg-secondary);
+            border: 2px solid var(--accent-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px var(--shadow-color);
+            z-index: 1000;
+            min-width: 250px;
+            text-align: center;
+        }
+        
+        .score-code-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .score-code {
+            font-size: 1.5em;
+            color: var(--text-primary);
+        }
+        
+        .favorite-icon {
+            font-size: 1.8em;
+            color: var(--accent-color);
+            transition: color 0.2s;
+        }
+        
+        .completion-row {
+            font-size: 1.1em;
+            color: var(--text-secondary);
+        }
+        
+        .completion-badge {
+            background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+            color: var(--text-primary);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>随机池管理</h1>
+        <div class="create-pool-area">
+            <h2>创建新随机池</h2>
+            <input type="text" id="poolName" placeholder="池名" style="width: 200px;">
+            <input type="number" id="minCompletion" placeholder="最小完成率" min="0" max="100" style="width: 120px;">
+            <input type="number" id="maxCompletion" placeholder="最大完成率" min="0" max="100" style="width: 120px;">
+            <select id="favorite">
+                <option value="">收藏筛选</option>
+                <option value="1">仅收藏</option>
+                <option value="2">仅未收藏</option>
+            </select>
+            <br><textarea id="customCodes" placeholder="可自定义池内容（每行一个曲谱码，优先于筛选结果）" style="width: 90%; height: 60px; margin-top: 8px;"></textarea>
+            <button id="createPoolBtn">创建池</button>
+        </div>
+        <div class="pool-list" id="poolList"></div>
+        <div id="randomCopyInfo" style="margin-top: 18px;"></div>
+    </div>
+    <script>
+    // 辅助函数
+    function filterDesc(filter) {
+        let arr = [];
+        if (filter.min_completion !== undefined && filter.min_completion !== null) arr.push('最小完成率:' + filter.min_completion);
+        if (filter.max_completion !== undefined && filter.max_completion !== null) arr.push('最大完成率:' + filter.max_completion);
+        if (filter.favorite === 1) arr.push('仅收藏');
+        if (filter.favorite === 2) arr.push('仅未收藏');
+        return arr.length ? arr.join('，') : '无';
+    }
+
+    // 自动检测localStorage并预填
+    window.addEventListener('DOMContentLoaded', function() {
+        const filterStr = localStorage.getItem('batch_pool_filter');
+        const codesStr = localStorage.getItem('batch_pool_codes');
+        if (filterStr) {
+            try {
+                const filter = JSON.parse(filterStr);
+                if (filter.min_completion !== undefined) document.getElementById('minCompletion').value = filter.min_completion;
+                if (filter.max_completion !== undefined) document.getElementById('maxCompletion').value = filter.max_completion;
+                if (filter.favorite !== undefined) document.getElementById('favorite').value = filter.favorite;
+            } catch(e) {}
+        }
+        if (codesStr) {
+            try {
+                const codes = JSON.parse(codesStr);
+                document.getElementById('customCodes').value = codes.join('\n');
+            } catch(e) {}
+        }
+        // 自动生成池名
+        if (filterStr || codesStr) {
+            const now = new Date();
+            const pad = n => n.toString().padStart(2, '0');
+            document.getElementById('poolName').value = '批量池_' + now.getFullYear() + pad(now.getMonth()+1) + pad(now.getDate()) + '_' + pad(now.getHours()) + pad(now.getMinutes());
+        }
+        // 清理localStorage
+        localStorage.removeItem('batch_pool_filter');
+        localStorage.removeItem('batch_pool_codes');
+    });
+
+    // 创建池
+    document.getElementById('createPoolBtn').onclick = async function() {
+        const name = document.getElementById('poolName').value.trim();
+        const minCompletion = document.getElementById('minCompletion').value;
+        const maxCompletion = document.getElementById('maxCompletion').value;
+        const favorite = document.getElementById('favorite').value;
+        const customCodes = document.getElementById('customCodes').value.trim();
+        if (!name) { alert('池名不能为空'); return; }
+        let filter = {};
+        if (minCompletion) filter.min_completion = parseInt(minCompletion);
+        if (maxCompletion) filter.max_completion = parseInt(maxCompletion);
+        if (favorite) filter.favorite = parseInt(favorite);
+        // 如果所有筛选都为空，则filter设为{}，否则传递实际筛选
+        if (!minCompletion && !maxCompletion && !favorite) filter = {};
+        let body = { name, filter };
+        if (customCodes) {
+            // 只保留合法曲谱码
+            const codes = customCodes.split(/\r?\n/).map(s=>s.trim()).filter(s=>/^\d{5,}$/.test(s));
+            if (codes.length === 0) { alert('自定义池内容无有效曲谱码'); return; }
+            body.codes = codes;
+        }
+        const resp = await fetch('/api/random_pool/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert('创建成功');
+            loadPools();
+        } else {
+            alert('创建失败：' + data.error);
+        }
+    };
+
+    // 加载池列表
+    async function loadPools() {
+        const resp = await fetch('/api/random_pool/list');
+        const data = await resp.json();
+        if (!data.success) { document.getElementById('poolList').innerHTML = '加载失败'; return; }
+        const pools = data.pools;
+        let html = '';
+        for (const pool of pools) {
+            html += `<div class="pool-card" data-pool-id="${pool.id}">
+                <div class="pool-title">${pool.name} <span style="font-size:0.9em;color:var(--text-muted);">(${pool.codes.length}个)</span></div>
+                <div class="filter-desc">筛选条件：${filterDesc(pool.filter)}</div>
+                <div class="secondary-filter" style="margin-bottom:10px;display:flex;align-items:center;gap:10px;">
+                    <input type="number" class="sec-min-completion" placeholder="最小完成率" min="0" max="100" style="width:90px;">
+                    <span>-</span>
+                    <input type="number" class="sec-max-completion" placeholder="最大完成率" min="0" max="100" style="width:90px;">
+                    <select class="sec-favorite" style="width:100px;">
+                        <option value="">收藏筛选</option>
+                        <option value="1">仅收藏</option>
+                        <option value="2">仅未收藏</option>
+                    </select>
+                    <button class="sec-apply-btn" style="padding:4px 16px;">应用</button>
+                </div>
+                <div class="pool-table-area">
+                    <table class="pool-table" style="width:100%;margin:8px 0;">
+                        <thead><tr>
+                            <th>曲谱码</th>
+                            <th class="completion-header" style="position:relative;cursor:pointer;z-index:1002;">
+                                完成率
+                                <div class="completion-filter" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:9999;background:var(--bg-secondary);padding:10px;border:1px solid var(--border-color);border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:120px;">
+                                    <div class="range-inputs" style="display:flex;align-items:center;gap:8px;">
+                                        <input type="number" class="header-min-completion" placeholder="最小" min="0" max="100" style="width:60px;">
+                                        <span class="range-separator">-</span>
+                                        <input type="number" class="header-max-completion" placeholder="最大" min="0" max="100" style="width:60px;">
+                                    </div>
+                                    <button class="header-apply-completion" style="margin-top:8px;width:100%;padding:4px 0;">应用</button>
+                                </div>
+                            </th>
+                            <th class="favorite-header" style="position:relative;cursor:pointer;z-index:1002;">
+                                收藏
+                                <div class="favorite-filter" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:9999;background:var(--bg-secondary);padding:10px;border:1px solid var(--border-color);border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:100px;">
+                                    <button class="header-fav-btn" data-fav="">全部</button>
+                                    <button class="header-fav-btn" data-fav="1">仅收藏</button>
+                                    <button class="header-fav-btn" data-fav="2">仅未收藏</button>
+                                </div>
+                            </th>
+                        </tr></thead>
+                        <tbody>
+                            ${pool.codes.map(code => `
+                                <tr data-code="${code}">
+                                    <td>${code}</td>
+                                    <td class="completion-cell" data-code="${code}">-</td>
+                                    <td class="favorite-cell" data-code="${code}">-</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pool-actions">
+                    <button class="random-copy-btn" style="background: linear-gradient(145deg, var(--accent-color), var(--accent-hover)); margin-right: 18px;" onclick="randomCopyFromPool(${pool.id})">随机复制</button>
+                    <button class="delete-pool-btn" style="background: linear-gradient(145deg, var(--accent-hover), var(--accent-color));" onclick="deletePool(${pool.id})">删除池</button>
+                    <button class="query-btn" style="background:linear-gradient(145deg,var(--accent-color),var(--accent-hover));margin-right:8px;" onclick="queryOrExcludePool(${pool.id},'query', this)">查询</button>
+                    <button class="exclude-btn" style="background:linear-gradient(145deg,var(--accent-hover),var(--accent-color));margin-right:8px;" onclick="queryOrExcludePool(${pool.id},'exclude', this)">排除</button>
+                    <button class="reset-pool-btn" style="background:linear-gradient(145deg,var(--accent-color),var(--accent-hover));margin-right:0;" onclick="resetPool(${pool.id}, this)">重置池</button>
+                </div>
+            </div>`;
+        }
+        document.getElementById('poolList').innerHTML = html || '<div>暂无随机池</div>';
+        // 加载每个池的曲谱码详情
+        for (const pool of pools) {
+            if (!pool.codes.length) continue;
+            // 批量查详情
+            const resp = await fetch('/api/scores/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ score_codes: pool.codes })
+            });
+            const data = await resp.json();
+            if (!data.success) continue;
+            for (const r of data.results) {
+                // 完成率
+                const cell = document.querySelector(`.pool-card [data-code='${r.score_code}'].completion-cell`);
+                if (cell) {
+                    cell.textContent = r.completion !== null ? r.completion + '%' : '-';
+                    cell.style.cursor = 'default';
+                    cell.onclick = null;
+                }
+                // 收藏
+                const favCell = document.querySelector(`.pool-card [data-code='${r.score_code}'].favorite-cell`);
+                if (favCell) {
+                    favCell.textContent = r.is_favorite ? '★' : '☆';
+                    favCell.style.cursor = 'default';
+                    favCell.onclick = null;
+                }
+            }
+        }
+        // 绑定二次筛选事件
+        document.querySelectorAll('.pool-card').forEach(card => {
+            const poolId = card.getAttribute('data-pool-id');
+            const minInput = card.querySelector('.sec-min-completion');
+            const maxInput = card.querySelector('.sec-max-completion');
+            const favSel = card.querySelector('.sec-favorite');
+            const applyBtn = card.querySelector('.sec-apply-btn');
+            applyBtn.onclick = async function() {
+                applyBtn.disabled = true;
+                const min = minInput.value;
+                const max = maxInput.value;
+                const fav = favSel.value;
+                const filter = {};
+                if (min) filter.min_completion = parseInt(min);
+                if (max) filter.max_completion = parseInt(max);
+                if (fav) filter.favorite = parseInt(fav);
+                const resp = await fetch(`/api/random_pool/${poolId}/filter`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filter })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    await loadPools();
+                    showToast('筛选完成');
+                } else {
+                    showToast('筛选失败：' + data.error);
+                }
+                applyBtn.disabled = false;
+            };
+            // 完成率筛选
+            const completionHeader = card.querySelector('.completion-header');
+            const completionFilter = card.querySelector('.completion-filter');
+            if (completionHeader && completionFilter) {
+                let compFilterVisible = false;
+                completionHeader.onclick = (e) => {
+                    compFilterVisible = true;
+                    completionFilter.style.display = 'block';
+                };
+                document.addEventListener('mousedown', function hideCompFilter(e) {
+                    if (!compFilterVisible) return;
+                    if (!completionFilter.contains(e.target) && e.target !== completionHeader) {
+                        completionFilter.style.display = 'none';
+                        compFilterVisible = false;
+                    }
+                });
+                completionFilter.querySelector('.header-apply-completion').onclick = async function() {
+                    const min = completionFilter.querySelector('.header-min-completion').value;
+                    const max = completionFilter.querySelector('.header-max-completion').value;
+                    const filter = {};
+                    if (min) filter.min_completion = parseInt(min);
+                    if (max) filter.max_completion = parseInt(max);
+                    const resp = await fetch(`/api/random_pool/${poolId}/filter`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filter })
+                    });
+                    const data = await resp.json();
+                    if (data.success) {
+                        await loadPools();
+                    } else {
+                        showToast('筛选失败：' + data.error);
+                    }
+                    completionFilter.style.display = 'none';
+                    compFilterVisible = false;
+                };
+            }
+            // 收藏筛选
+            const favoriteHeader = card.querySelector('.favorite-header');
+            const favoriteFilter = card.querySelector('.favorite-filter');
+            if (favoriteHeader && favoriteFilter) {
+                let favFilterVisible = false;
+                favoriteHeader.onclick = (e) => {
+                    favFilterVisible = true;
+                    favoriteFilter.style.display = 'block';
+                };
+                document.addEventListener('mousedown', function hideFavFilter(e) {
+                    if (!favFilterVisible) return;
+                    if (!favoriteFilter.contains(e.target) && e.target !== favoriteHeader) {
+                        favoriteFilter.style.display = 'none';
+                        favFilterVisible = false;
+                    }
+                });
+                favoriteFilter.querySelectorAll('.header-fav-btn').forEach(btn => {
+                    btn.onclick = async function() {
+                        const fav = btn.getAttribute('data-fav');
+                        const filter = {};
+                        if (fav) filter.favorite = parseInt(fav);
+                        const resp = await fetch(`/api/random_pool/${poolId}/filter`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filter })
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            await loadPools();
+                        } else {
+                            showToast('筛选失败：' + data.error);
+                        }
+                        favoriteFilter.style.display = 'none';
+                        favFilterVisible = false;
+                    };
+                });
+            }
+        });
+    }
+
+    // 随机复制
+    window.randomCopyFromPool = async function(poolId) {
+        const resp = await fetch(`/api/random_pool/${poolId}/random`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            // 复制到剪贴板
+            const tempInput = document.createElement('textarea');
+            tempInput.value = data.code;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {}
+            document.body.removeChild(tempInput);
+            // 查详情并渲染卡片
+            const detailResp = await fetch('/api/scores/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ score_codes: [data.code] })
+            });
+            const detailData = await detailResp.json();
+            if (detailData.success && detailData.results.length > 0) {
+                updateRandomCopyCard(detailData.results[0]);
+            } else {
+                updateRandomCopyCard({ score_code: data.code, completion: null, is_favorite: false });
+            }
+            loadPools();
+        } else {
+            showToast('抽取失败：' + data.error);
+        }
+    };
+
+    // 小卡片渲染和事件绑定
+    function updateRandomCopyCard(scoreObj) {
+        const randomCopyInfo = document.getElementById('randomCopyInfo');
+        const completionText = scoreObj.completion !== null ? `${scoreObj.completion}%` : '未完成';
+        const favoriteIcon = scoreObj.is_favorite ? '★' : '☆';
+        randomCopyInfo.innerHTML = `
+          <div class="random-info-card">
+            <div class="score-code-row">
+              <span class="score-code">${scoreObj.score_code}</span>
+              <span class="favorite-icon" style="cursor:pointer;">${favoriteIcon}</span>
+            </div>
+            <div class="completion-row">
+              完成率：<span class="completion-badge" style="cursor:pointer;">${completionText}</span>
+            </div>
+          </div>
+        `;
+        // 绑定完成率编辑事件
+        randomCopyInfo.querySelector('.completion-badge').onclick = async function() {
+            const newValue = prompt('请输入新的完成率（0-100）', scoreObj.completion !== null ? scoreObj.completion : '');
+            if (newValue === null) return;
+            const num = parseInt(newValue);
+            if (isNaN(num) || num < 0 || num > 100) {
+                showToast('请输入0-100之间的数字');
+                return;
+            }
+            try {
+                const resp = await fetch('/api/scores/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ score_code: scoreObj.score_code, completion: num })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    scoreObj.completion = num;
+                    updateRandomCopyCard(scoreObj);
+                    showToast('完成率已更新');
+                } else {
+                    showToast('更新失败');
+                }
+            } catch (e) {
+                showToast('网络错误，更新失败');
+            }
+        };
+        // 绑定收藏切换事件
+        randomCopyInfo.querySelector('.favorite-icon').onclick = async function() {
+            try {
+                const resp = await fetch(`/api/scores/${scoreObj.score_code}/favorite`, {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    scoreObj.is_favorite = !scoreObj.is_favorite;
+                    updateRandomCopyCard(scoreObj);
+                    showToast(scoreObj.is_favorite ? '已收藏' : '已取消收藏');
+                } else {
+                    showToast('操作失败');
+                }
+            } catch (e) {
+                showToast('网络错误，操作失败');
+            }
+        };
+    }
+
+    // 删除池
+    window.deletePool = async function(poolId) {
+        if (!confirm('确定要删除该池吗？')) return;
+        const resp = await fetch(`/api/random_pool/${poolId}/delete`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            loadPools();
+        } else {
+            alert('删除失败：' + data.error);
+        }
+    };
+
+    // 查询和排除功能
+    window.queryOrExcludePool = async function(poolId, type, btn) {
+        if (btn) btn.disabled = true;
+        const input = prompt(type === 'query' ? '请输入要查询的曲谱码（可多行）' : '请输入要排除的曲谱码（可多行）');
+        if (input === null) { if (btn) btn.disabled = false; return; }
+        const codes = input.split(/\r?\n/).map(s=>s.trim()).filter(s=>/^\d{5,}$/.test(s));
+        if (!codes.length) { showToast('无有效曲谱码'); if (btn) btn.disabled = false; return; }
+        // 获取当前池内容
+        const resp = await fetch('/api/random_pool/list');
+        const data = await resp.json();
+        if (!data.success) { showToast('操作失败'); if (btn) btn.disabled = false; return; }
+        const pool = data.pools.find(p=>p.id==poolId);
+        if (!pool) { showToast('池不存在'); if (btn) btn.disabled = false; return; }
+        let newCodes;
+        if (type === 'query') {
+            // 只保留输入的码且在池内
+            newCodes = pool.codes.filter(code=>codes.includes(code));
+        } else {
+            // 排除输入的码
+            newCodes = pool.codes.filter(code=>!codes.includes(code));
+        }
+        // 更新池
+        await fetch(`/api/random_pool/${poolId}/filter`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filter: {}, codes: newCodes })
+        });
+        await loadPools();
+        showToast(type === 'query' ? '查询完成' : '排除完成');
+        if (btn) btn.disabled = false;
+    };
+
+    // 重置池功能
+    window.resetPool = async function(poolId, btn) {
+        if (!confirm('确定要重置该池内容为最初全量吗？')) return;
+        if (btn) btn.disabled = true;
+        const resp = await fetch(`/api/random_pool/${poolId}/reset`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            await loadPools();
+            showToast('池已重置为初始内容');
+        } else {
+            showToast('重置失败：' + data.error);
+        }
+        if (btn) btn.disabled = false;
+    };
+
+    // 初始加载
+    loadPools();
+
+    // Toast 提示
+    function showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        toast.offsetHeight;
+        toast.classList.add('show');
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                document.body.removeChild(toast);
+            }, 300);
+        }, 2000);
+    }
+    </script>
+</body>
+</html> 
