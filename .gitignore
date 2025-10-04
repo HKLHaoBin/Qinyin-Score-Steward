@@ -21,7 +21,10 @@ wheels/
 .installed.cfg
 *.egg
 千音雅集工具/
-
+程序封装.zip
+封装为EXE的千音雅集.zip
+千音雅集工具.zip
+The old appreciation code/
 # 虚拟环境
 venv/
 ENV/
