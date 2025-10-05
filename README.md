@@ -16,10 +16,37 @@
 - 🔄 自动滚动加载
 - 💾 智能数据备份
 - 🆕 新鉴赏码功能，自动将昨日鉴赏曲谱码添加到排除列表
+- 🎬 视频自动压缩，支持大文件上传（自动将超过500MB的视频压缩到450MB以内）
 
 ## 安装说明
 
-## 方法一：使用打包好的exe (Windows)
+### 环境要求
+
+- Python 3.9 或更高版本
+- FFmpeg（用于视频压缩功能）
+
+### FFmpeg 安装
+
+在使用视频压缩功能之前，需要安装 FFmpeg：
+
+**Windows:**
+1. 访问 https://ffmpeg.org/download.html 下载 Windows 版本
+2. 解压到任意目录（如 C:\ffmpeg）
+3. 将 C:\ffmpeg\bin 添加到系统环境变量 PATH 中
+4. 重启命令行或IDE以使环境变量生效
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+### 方法一：使用打包好的exe (Windows)
 
 1. 下载打包好exe的ZIP文件：
 

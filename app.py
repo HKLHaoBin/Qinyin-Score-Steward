@@ -15,6 +15,9 @@ import json
 import requests
 import webbrowser
 from werkzeug.utils import secure_filename
+import tempfile
+import ffmpeg
+from werkzeug.exceptions import RequestEntityTooLarge
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
@@ -22,11 +25,62 @@ socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
 # —— 上传配置 ——
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads', 'videos')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB 上限（按需调整）
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB 上限（按需调整）
 ALLOWED_VIDEO_EXTS = {'mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv'}
+
+# 视频压缩配置
+VIDEO_COMPRESS_THRESHOLD = 500 * 1024 * 1024  # 500MB 超过此大小自动压缩
+VIDEO_COMPRESS_TARGET_SIZE = 450 * 1024 * 1024  # 压缩目标大小 450MB以内
 
 def allowed_video(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTS
+
+def compress_video(input_path, output_path, target_size_mb=450):
+    """压缩视频到目标大小"""
+    try:
+        # 获取原始视频信息
+        probe = ffmpeg.probe(input_path)
+        duration = float(probe['format']['duration'])
+
+        # 计算目标比特率 (考虑到一些额外开销，使用90%的目标大小)
+        target_size_bytes = target_size_mb * 1024 * 1024 * 0.9
+        target_total_bitrate = int((target_size_bytes * 8) / duration)
+
+        # 分配视频和音频比特率
+        if target_total_bitrate > 256000:  # 如果总比特率足够高
+            audio_bitrate = 128000  # 128k音频比特率
+            video_bitrate = target_total_bitrate - audio_bitrate
+        else:
+            # 如果总比特率太低，调整音频比特率
+            audio_bitrate = min(64000, target_total_bitrate // 4)
+            video_bitrate = target_total_bitrate - audio_bitrate
+
+        # 确保视频比特率不会过低
+        video_bitrate = max(500000, video_bitrate)  # 最低500k
+
+        print(f"视频压缩参数: 总时长={duration:.2f}s, 目标大小={target_size_mb}MB, 视频比特率={video_bitrate}, 音频比特率={audio_bitrate}")
+
+        # 执行压缩
+        (
+            ffmpeg
+            .input(input_path)
+            .output(
+                output_path,
+                vcodec='libx264',
+                video_bitrate=video_bitrate,
+                audio_bitrate=audio_bitrate,
+                bufsize='64k',
+                format='mp4'
+            )
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+        return True
+    except Exception as e:
+        print(f"视频压缩失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 # 全局变量
 jianshang_api_url = "https://act-hk4e-api.miyoushe.com/event/musicugc/v1/second_page"
@@ -1092,7 +1146,54 @@ def create_review():
             # 防重名：前缀曲谱码与时间戳
             final_name = f"{score_code}_{int(time.time())}_{safe_name}"
             dst_path = os.path.join(app.config['UPLOAD_FOLDER'], final_name)
-            video.save(dst_path)
+
+            # 确保上传目录存在
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+            # 保存原始视频文件到临时位置
+            temp_path = None
+            try:
+                # 创建临时文件保存上传的视频
+                temp_fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(safe_name)[1])
+                os.close(temp_fd)
+                video.save(temp_path)
+                print(f"视频文件已保存到临时位置: {temp_path}")
+
+                # 检查文件大小是否需要压缩
+                file_size = os.path.getsize(temp_path)
+                print(f"上传的视频文件大小: {file_size / (1024*1024):.2f} MB")
+
+                if file_size > VIDEO_COMPRESS_THRESHOLD:
+                    print("文件超过压缩阈值，开始压缩...")
+                    # 压缩视频
+                    compressed_path = dst_path.replace(os.path.splitext(dst_path)[1], '_compressed.mp4')
+                    if compress_video(temp_path, compressed_path, VIDEO_COMPRESS_TARGET_SIZE / (1024*1024)):
+                        # 压缩成功，使用压缩后的文件
+                        dst_path = compressed_path
+                        final_name = os.path.basename(compressed_path)
+                        print(f"视频压缩完成，保存到: {dst_path}")
+                    else:
+                        # 压缩失败，直接保存原始文件
+                        print("视频压缩失败，保存原始文件")
+                        shutil.move(temp_path, dst_path)
+                else:
+                    # 文件大小未超过阈值，直接移动文件
+                    shutil.move(temp_path, dst_path)
+                    print(f"视频文件已保存到: {dst_path}")
+
+                # 清理临时文件
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+            except Exception as save_error:
+                # 清理临时文件
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+                print(f"保存视频文件时出错: {str(save_error)}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'success': False, 'error': f'保存视频文件失败: {str(save_error)}'}), 500
+
             # 前端可直接访问的相对 URL
             saved_rel_url = f"/uploads/videos/{final_name}"
 
@@ -1117,6 +1218,11 @@ def create_review():
             'is_top': is_top
         })
     except Exception as e:
+        # 打印详细错误信息以便调试
+        import traceback
+        error_info = traceback.format_exc()
+        print(f"创建评价时出错: {str(e)}")
+        print(f"详细错误信息:\n{error_info}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -1269,6 +1375,14 @@ def list_liked_reviews():
         return jsonify({'success': True, 'results': data})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# 自定义错误处理器
+@app.errorhandler(RequestEntityTooLarge)
+def handle_file_too_large(e):
+    return jsonify({
+        'success': False,
+        'error': f'文件太大了！请上传小于500MB的文件，或使用视频压缩功能。'
+    }), 413
 
 if __name__ == '__main__':
     # 启动时备份数据库

@@ -44,6 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 5. **Score Extraction**: Automated extraction from miHoYo website using Selenium
 6. **Random Pools**: Create and manage pools of scores for random selection
 7. **Real-time Sync**: Socket.IO enables real-time updates across clients
+8. **Video Compression**: Automatically compresses large video files (over 500MB) during upload to fit within 500MB limit
 
 ### API Endpoints
 - `GET /api/scores`: Retrieve scores with filtering
@@ -64,6 +65,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Selenium**: Web automation for score extraction
 - **Pyperclip**: Clipboard access
 - **WebDriver Manager**: Chrome driver management
+- **FFmpeg-python**: Video compression processing
 
 ## Development Notes
 - Uses port 6605 (not standard Flask port 5000)
@@ -71,4 +73,5 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Automatic database backups on application start
 - Mobile-friendly responsive design
 - Supports both Chinese and English interfaces
-- Can be packaged as standalone executable.
+- Can be packaged as standalone executable
+- FFmpeg required for video compression functionality

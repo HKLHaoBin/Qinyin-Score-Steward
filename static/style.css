@@ -79,8 +79,6 @@ body {
     line-height: 1.6;
     background-color: var(--bg-primary);
     color: var(--text-primary);
-    max-width: 800px;
-    margin: 0 auto;
     padding: 20px;
 }
 

@@ -8,3 +8,4 @@ python-engineio
 eventlet
 flask-debugtoolbar
 webdriver-manager
+ffmpeg-python

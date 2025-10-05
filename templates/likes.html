@@ -31,11 +31,11 @@
 
     /* ==== 两栏布局：左侧悬浮栏 + 右侧自适应 ==== */
     .likes-layout {
-      display: grid;
-      grid-template-columns: 300px 1fr; /* 左 300px，右自适应 */
-      gap: 16px;
-      align-items: start;
-    }
+    display: grid;
+    grid-template-columns: 320px 4fr;
+    gap: 15px;
+    align-items: start;
+}
 
     /* 左侧：悬浮（跟随页面滚动到顶部后固定） */
     .likes-sidebar {
@@ -94,6 +94,7 @@
       transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
       display:flex; flex-direction:column; gap:10px;
       cursor: pointer;
+      min-width: 315px;
     }
     .likes-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.10); border-color: rgba(99,102,241,.28); }
 

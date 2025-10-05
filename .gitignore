@@ -20,7 +20,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
+*.mp4
 # 大文件和可执行文件
 千音雅集工具/
 千音雅集工具/**
