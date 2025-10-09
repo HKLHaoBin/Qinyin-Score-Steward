@@ -55,6 +55,7 @@
       padding: 12px;
       border-radius: 12px;
     }
+    .random-pick { display:flex; flex-direction:column; gap:6px; }
     .likes-search {
       display:flex; align-items:center;;
       background: var(--bg,#fff); border:1px solid var(--border,#e2e2e2); border-radius:10px; padding:8px 10px;
@@ -71,12 +72,17 @@
     /* 右侧内容区 */
     .likes-main {
       min-width: 0; /* 防止内容撑破 */
+      display: flex;
+      justify-content: flex-end;
     }
 
     /* 网格卡片：在右侧区域自适应铺满 */
     .likes-grid {
       display:grid; gap:14px;
       grid-template-columns: repeat(auto-fill, minmax(263px, 1fr));
+      justify-content: flex-end;
+      width: 100%;
+      max-width: 100%;
     }
 
     /* 响应式：窄屏下改为上下结构（侧栏在上方） */
@@ -97,6 +103,20 @@
       min-width: 315px;
     }
     .likes-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.10); border-color: rgba(99,102,241,.28); }
+    .likes-card.likes-card--sidebar {
+      min-width: auto;
+      width: 100%;
+      padding: 10px;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.05);
+      font-size: 12px;
+    }
+    .likes-card--sidebar .likes-row { gap: 6px; }
+    .likes-card--sidebar .likes-code { font-size: 15px; }
+    .likes-card--sidebar .stars { font-size: 14px; }
+    .likes-card--sidebar .comment { font-size: 12px; max-height: 48px; }
+    .likes-card--sidebar .likes-actions { gap: 6px; }
+    .likes-card--sidebar .likes-actions .btn { flex:1; padding:6px 8px; font-size: 12px; }
 
     .likes-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
     .likes-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:600; }
@@ -178,6 +198,8 @@
           </select>
 
           <button id="refreshBtn" class="btn">刷新</button>
+          <button id="randomCopyBtn" class="btn">随机复制</button>
+          <div id="randomPickContainer" class="random-pick" aria-live="polite"></div>
         </div>
       </aside>
 
@@ -216,10 +238,13 @@
     const $ = sel => document.querySelector(sel);
     const grid = $('#likesGrid');
     const countEl = $('#likesCount');
+    const randomContainer = $('#randomPickContainer');
+    const randomBtn = $('#randomCopyBtn');
 
     const state = {
       q: '', minRating: 0, videoOnly: false, sort: 'latest'
     };
+    let currentList = [];
 
     function setCount(n){ countEl.textContent = `（共 ${n} 首）`; }
 
@@ -248,6 +273,38 @@
       const ta = document.createElement('textarea');
       ta.value = text; document.body.appendChild(ta);
       ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    }
+
+    function createCardElement(item, options = {}){
+      const card = document.createElement('div');
+      card.className = 'likes-card';
+      if (options.extraClass) {
+        card.classList.add(options.extraClass);
+      }
+      card.innerHTML = `
+          <div class="likes-row">
+            <div class="likes-code">${item.score_code}</div>
+            <div class="stars" title="${item.rating} 星">${toStars(item.rating)}</div>
+          </div>
+          <div class="likes-row">
+            <div class="likes-badges">
+              ${item.video_url ? '<span class="badge video">🎬 视频</span>' : ''}
+              <span class="badge">完成率 ${item.completion != null ? (item.completion + '%') : '-'}</span>
+            </div>
+            <div class="muted">${new Date(item.created_at.replace(' ','T')).toLocaleDateString()}</div>
+          </div>
+          <div class="comment" title="${(item.comment||'').replace(/"/g,'&quot;')}">${item.comment || '（无评语）'}</div>
+          <div class="likes-actions">
+            <button class="btn" data-act="copy">复制曲谱码</button>
+            <button class="btn primary" data-act="view">查看评价</button>
+          </div>
+        `;
+      card.addEventListener('click', (e)=>{
+        const act = e.target?.dataset?.act;
+        if (act === 'copy') { copy(item.score_code); e.stopPropagation(); }
+        else { openViewer(item); }
+      });
+      return card;
     }
 
     function openViewer(item){
@@ -280,6 +337,9 @@
 
     async function load(){
       skeleton();
+      if (randomContainer) {
+        randomContainer.innerHTML = '';
+      }
       const p = new URLSearchParams();
       if (state.q) p.set('q', state.q);
       if (state.minRating) p.set('min_rating', state.minRating);
@@ -290,38 +350,19 @@
       const data = await resp.json();
       if(!data.success){ grid.innerHTML = '<div class="muted">加载失败</div>'; return; }
       const list = data.results || [];
+      currentList = list;
       setCount(list.length);
-      if(!list.length){ grid.innerHTML = '<div class="muted">还没有喜欢的谱子～ 去首页点 ❤️ 添加一条吧。</div>'; return; }
+      if(!list.length){
+        grid.innerHTML = '<div class="muted">还没有喜欢的谱子～ 去首页点 ❤️ 添加一条吧。</div>';
+        if (randomContainer) {
+          randomContainer.innerHTML = '<div class="muted">当前没有可随机的谱子。</div>';
+        }
+        return;
+      }
 
       grid.innerHTML = '';
       list.forEach(item => {
-        const card = document.createElement('div');
-        card.className = 'likes-card';
-        card.innerHTML = `
-          <div class="likes-row">
-            <div class="likes-code">${item.score_code}</div>
-            <div class="stars" title="${item.rating} 星">${toStars(item.rating)}</div>
-          </div>
-          <div class="likes-row">
-            <div class="likes-badges">
-              ${item.video_url ? '<span class="badge video">🎬 视频</span>' : ''}
-              ${item.is_favorite ? '<span class="badge fav">★ 已收藏</span>' : ''}
-              <span class="badge">完成率 ${item.completion != null ? (item.completion + '%') : '-'}</span>
-            </div>
-            <div class="muted">${new Date(item.created_at.replace(' ','T')).toLocaleDateString()}</div>
-          </div>
-          <div class="comment" title="${(item.comment||'').replace(/"/g,'&quot;')}">${item.comment || '（无评语）'}</div>
-          <div class="likes-actions">
-            <button class="btn" data-act="copy">复制曲谱码</button>
-            <button class="btn primary" data-act="view">查看评价</button>
-          </div>
-        `;
-        // 点击整卡也可以查看
-        card.addEventListener('click', (e)=>{
-          const act = e.target?.dataset?.act;
-          if (act === 'copy') { copy(item.score_code); e.stopPropagation(); }
-          else { openViewer(item); }
-        });
+        const card = createCardElement(item);
         grid.appendChild(card);
       });
     }
@@ -340,6 +381,25 @@
         state.minRating = parseInt(btn.dataset.val);
         load();
       });
+    });
+
+    randomBtn?.addEventListener('click', ()=>{
+      if (!currentList.length) {
+        if (randomContainer) {
+          randomContainer.innerHTML = '<div class="muted">当前没有可随机的谱子。</div>';
+        }
+        return;
+      }
+      const item = currentList[Math.floor(Math.random() * currentList.length)];
+      copy(item.score_code);
+      if (!randomContainer) { return; }
+      randomContainer.innerHTML = '';
+      const note = document.createElement('div');
+      note.className = 'muted';
+      note.textContent = `已复制曲谱码 ${item.score_code}`;
+      randomContainer.appendChild(note);
+      const card = createCardElement(item, { extraClass: 'likes-card--sidebar' });
+      randomContainer.appendChild(card);
     });
 
     // 初始加载
