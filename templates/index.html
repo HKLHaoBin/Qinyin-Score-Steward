@@ -39,8 +39,9 @@
             <div class="current-status">
                 <p>当前状态：<span id="currentStatus">等待曲谱码...</span></p>
                 <p>曲谱码：<span id="currentScoreCode" class="score-code">-</span>
-                   <span class="action-buttons">
+                 <span class="action-buttons">
                      <button id="favoriteBtn" class="favorite-btn" style="display: none;">☆</button>
+                     <button id="remarkBtn" class="remark-btn" style="display: none;" title="编辑备注">📝</button>
                      <button id="reviewBtn" class="review-btn" style="display: none;">🩶</button>
                    </span>
                 </p>
@@ -57,6 +58,27 @@
             <h2>历史记录</h2>
             <div id="historyList"></div>
         </div>
+    </div>
+
+    <!-- 备注弹窗 -->
+    <div id="remarkModal" class="qyj-modal" aria-hidden="true">
+      <div class="qyj-modal__backdrop" data-close-remark></div>
+      <div class="qyj-modal__card" role="dialog" aria-modal="true" aria-labelledby="remarkTitle">
+        <div class="qyj-modal__header">
+          <h3 id="remarkTitle">编辑备注</h3>
+          <button class="qyj-modal__close" id="remarkCloseBtn" aria-label="关闭">✕</button>
+        </div>
+        <div id="remarkSummary" class="qyj-tip-sm" style="display:none;"></div>
+        <div class="qyj-field">
+          <label class="qyj-label" for="remarkTextarea">备注内容</label>
+          <textarea id="remarkTextarea" rows="4" maxlength="200" class="qyj-textarea" placeholder="记录作者、来源或其他说明"></textarea>
+        </div>
+        <div class="qyj-modal__actions">
+          <button id="remarkCancelBtn" class="qyj-btn qyj-btn--ghost">取消</button>
+          <button id="remarkSaveBtn" class="qyj-btn qyj-btn--primary">保存备注</button>
+        </div>
+        <div id="remarkMsg" class="qyj-msg" aria-live="polite"></div>
+      </div>
     </div>
 
     <!-- 评价弹窗（替换整块） -->

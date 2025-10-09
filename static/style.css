@@ -346,6 +346,52 @@ h1 {
     justify-content: center;
 }
 
+.remark-btn {
+    font-size: 1.3em;
+    padding: 5px;
+    color: #6c757d;
+    cursor: pointer;
+    background: none;
+    border: none;
+    vertical-align: middle;
+    line-height: 1;
+    min-width: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+.remark-btn:hover,
+.remark-btn:focus {
+    color: #17a2b8;
+    outline: none;
+    transform: translateY(-1px);
+}
+.remark-btn.has-remark {
+    color: #17a2b8;
+}
+.table-remark-btn {
+    font-size: 1.1em;
+}
+.random-remark-btn {
+    font-size: 0.95em;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: rgba(23, 162, 184, 0.12);
+    border: 1px solid rgba(23, 162, 184, 0.35);
+    color: #138496;
+}
+.random-remark-btn.has-remark {
+    background: rgba(23,162,184,0.2);
+    border-color: rgba(23,162,184,0.6);
+    color: #0c5460;
+}
+.table-action-wrap {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+}
+
 .action-buttons {
     display: inline-flex;
     gap: 5px;
@@ -371,6 +417,14 @@ h1 {
 }
 .history-content {
     flex-grow: 1;
+}
+
+.history-remark {
+    margin-top: 4px;
+    font-size: 0.95em;
+    color: var(--fg, #4a4a4a);
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .stats-info {
@@ -1003,6 +1057,17 @@ h1 {
     margin-left: 6px;
     font-weight: bold;
 }
+.remark-text {
+    margin-top: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--fg, #444);
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(23, 162, 184, 0.08);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px);}
     to { opacity: 1; transform: translateY(0);}
@@ -1021,18 +1086,48 @@ h1 {
     width: 100%;
     align-items: stretch;
 }
-.input-row textarea {
+.query-column {
     flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     min-width: 0;
+}
+.query-column .query-textarea {
+    flex: 1;
     min-height: 100px;
     height: 150px;
     resize: vertical;
+}
+.remark-label {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--fg, #2f2f2f);
+}
+.remark-input {
+    height: 40px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border, #d9d9d9);
+    background: var(--bg, #fff);
+    color: var(--fg, #333);
+}
+.remark-input:focus {
+    border-color: var(--accent, #4f86ff);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(79,134,255,0.2);
 }
 .button-row button {
     flex: 1 1 0;
     height: 48px;
     font-size: 16px;
     width: 100%;
+}
+.action-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
 }
 @media (max-width: 768px) {
     .input-row, .button-row {

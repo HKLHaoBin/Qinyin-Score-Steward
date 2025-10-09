@@ -6,14 +6,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     const socket = io();
+    const sanitizeTooltip = (text) => (text || '').toString().replace(/\s+/g, ' ').trim();
+    const escapeHtml = (str = '') => str
+        .toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     const historyList = document.getElementById('historyList');
     const messageDisplay = document.getElementById('message');
     const favoriteBtn = document.getElementById('favoriteBtn');
+    const remarkBtn = document.getElementById('remarkBtn');
+    const remarkModal = document.getElementById('remarkModal');
+    const remarkTextarea = document.getElementById('remarkTextarea');
+    const remarkSaveBtn = document.getElementById('remarkSaveBtn');
+    const remarkCancelBtn = document.getElementById('remarkCancelBtn');
+    const remarkCloseBtn = document.getElementById('remarkCloseBtn');
+    const remarkSummary = document.getElementById('remarkSummary');
+    const remarkMsg = document.getElementById('remarkMsg');
     const completionInput = document.getElementById('completionInput');
     const saveBtn = document.getElementById('saveBtn');
     const currentScoreCodeDisplay = document.getElementById('currentScoreCode');
     const statusBox = document.querySelector('.status-box');
     let currentScoreCode = null;
+    let currentRemark = '';
     let showFavoritesOnly = false;  // 显示收藏的标志
     let showScoreCodeOnly = false;  // 仅显示曲谱码的标志
     
@@ -62,6 +79,116 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 初始加载统计信息
     updateStats();
+    updateRemarkButtonState();
+
+    function updateRemarkButtonState() {
+        if (!remarkBtn) {
+            return;
+        }
+        if (!currentScoreCode) {
+            remarkBtn.style.display = 'none';
+            return;
+        }
+        remarkBtn.style.display = 'inline-flex';
+        const hasRemark = Boolean((currentRemark || '').trim());
+        remarkBtn.classList.toggle('has-remark', hasRemark);
+        const tip = hasRemark ? `备注：${sanitizeTooltip(currentRemark)}` : '添加备注';
+        remarkBtn.setAttribute('title', tip);
+    }
+
+    async function loadRemark(scoreCode) {
+        if (!scoreCode) return;
+        try {
+            const resp = await fetch(`/api/scores/${scoreCode}/remark`);
+            const data = await resp.json();
+            if (data.success && typeof data.remark === 'string') {
+                currentRemark = data.remark;
+                if (remarkTextarea) {
+                    remarkTextarea.value = data.remark;
+                }
+                updateRemarkButtonState();
+            }
+        } catch (error) {
+            console.warn('备注加载失败', error);
+        }
+    }
+
+    function openRemarkModal() {
+        if (!remarkModal || !remarkTextarea || !remarkSaveBtn || !currentScoreCode) {
+            return;
+        }
+        remarkMsg.textContent = '';
+        if (remarkSummary) {
+            remarkSummary.textContent = `当前曲谱：${currentScoreCode}`;
+            remarkSummary.style.display = 'block';
+        }
+        remarkTextarea.value = currentRemark || '';
+        remarkModal.classList.add('is-open');
+        remarkModal.setAttribute('aria-hidden', 'false');
+        setTimeout(() => remarkTextarea.focus(), 50);
+        loadRemark(currentScoreCode);
+    }
+
+    function closeRemarkModal() {
+        if (!remarkModal) return;
+        remarkModal.classList.remove('is-open');
+        remarkModal.setAttribute('aria-hidden', 'true');
+    }
+
+    async function saveRemark() {
+        if (!currentScoreCode || !remarkTextarea || !remarkSaveBtn) return;
+        const remarkValue = remarkTextarea.value || '';
+        remarkSaveBtn.disabled = true;
+        remarkSaveBtn.textContent = '保存中...';
+        remarkMsg.textContent = '';
+        try {
+            const resp = await fetch(`/api/scores/${currentScoreCode}/remark`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ remark: remarkValue })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                currentRemark = data.remark || '';
+                updateRemarkButtonState();
+                closeRemarkModal();
+                refreshHistory();
+            } else {
+                remarkMsg.textContent = data.error || '保存备注失败';
+            }
+        } catch (error) {
+            remarkMsg.textContent = '保存失败，请稍后再试';
+        } finally {
+            remarkSaveBtn.disabled = false;
+            remarkSaveBtn.textContent = '保存备注';
+        }
+    }
+
+    remarkBtn?.addEventListener('click', openRemarkModal);
+    remarkCancelBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeRemarkModal();
+    });
+    remarkCloseBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeRemarkModal();
+    });
+    remarkModal?.addEventListener('click', (event) => {
+        if (event.target && event.target.dataset && Object.prototype.hasOwnProperty.call(event.target.dataset, 'closeRemark')) {
+            closeRemarkModal();
+        }
+    });
+    remarkSaveBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        saveRemark();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && remarkModal && remarkModal.classList.contains('is-open')) {
+            closeRemarkModal();
+        }
+    });
 
     // 更新当前状态
     socket.on('clipboard_update', function(data) {
@@ -76,6 +203,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 显示收藏按钮并重置状态
             favoriteBtn.style.display = 'inline-block';
+            currentRemark = data.remark || '';
+            updateRemarkButtonState();
             if (data.exists) {
                 statusBox.className = 'status-box exists';
                 document.getElementById('currentCompletion').textContent = data.completion + '%';
@@ -170,6 +299,18 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStats();
     });
 
+    socket.on('remark_update', function(data) {
+        if (!data || !data.score_code) return;
+        if (data.score_code === currentScoreCode) {
+            currentRemark = data.remark || '';
+            if (remarkTextarea && remarkModal && remarkModal.classList.contains('is-open')) {
+                remarkTextarea.value = currentRemark;
+            }
+            updateRemarkButtonState();
+        }
+        refreshHistory();
+    });
+
     // 收藏按钮点击事件
     favoriteBtn.addEventListener('click', async function() {
         if (currentScoreCode) {
@@ -209,10 +350,12 @@ document.addEventListener('DOMContentLoaded', () => {
         item.className = 'history-item';
         item.id = `history-${data.score_code}`;
         const now = new Date().toLocaleString();
+        const remarkLine = data.remark ? `<div class="history-remark">${escapeHtml(data.remark)}</div>` : '';
         item.innerHTML = `
             <div class="history-content">
                 <div>曲谱码：<span class="score-code">${data.score_code}</span></div>
                 <div>完成率：<span class="completion">${data.completion}%</span></div>
+                ${remarkLine}
                 <div class="timestamp">${now}</div>
             </div>
             <span class="favorite-btn">${data.is_favorite ? '★' : '☆'}</span>
@@ -253,6 +396,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         item.className = 'history-item';
                         item.id = `history-${score.score_code}`;
                         const date = new Date(score.created_at).toLocaleString();
+                        const remarkSection = score.remark ? `<div class="history-remark">${escapeHtml(score.remark)}</div>` : '';
+                        const completionText = score.completion !== null && score.completion !== undefined ? `${score.completion}%` : '-';
                         
                         if (showScoreCodeOnly) {
                             item.innerHTML = `
@@ -265,7 +410,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             item.innerHTML = `
                                 <div class="history-content">
                                     <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
-                                    <div>完成率：<span class="completion">${score.completion}%</span></div>
+                                    <div>完成率：<span class="completion">${completionText}</span></div>
+                                    ${remarkSection}
                                     <div class="timestamp">${date}</div>
                                 </div>
                                 <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>

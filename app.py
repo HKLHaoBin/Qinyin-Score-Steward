@@ -149,6 +149,7 @@ def init_db():
             difficulty INTEGER NOT NULL DEFAULT 0,
             region TEXT NOT NULL DEFAULT 'CN',
             is_favorite BOOLEAN DEFAULT 0,
+            remark TEXT DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -181,6 +182,13 @@ def init_db():
     except sqlite3.OperationalError:
         # 如果不存在，添加 is_favorite 列
         c.execute('ALTER TABLE scores ADD COLUMN is_favorite BOOLEAN DEFAULT 0')
+
+    try:
+        # 检查 remark 列是否存在
+        c.execute('SELECT remark FROM scores LIMIT 1')
+    except sqlite3.OperationalError:
+        # 如果不存在，添加 remark 列
+        c.execute('ALTER TABLE scores ADD COLUMN remark TEXT DEFAULT ""')
     
     try:
         # 检查 created_at 列是否存在
@@ -344,7 +352,7 @@ def check_clipboard():
                     # 检查数据库中是否存在该曲谱码（原有）
                     conn = sqlite3.connect('scores.db')
                     c = conn.cursor()
-                    c.execute('SELECT completion, is_favorite FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (current_content,))
+                    c.execute('SELECT completion, is_favorite, remark FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (current_content,))
                     result = c.fetchone()
                     conn.close()
 
@@ -362,6 +370,7 @@ def check_clipboard():
                         'exists': bool(result),
                         'completion': result[0] if result else None,
                         'is_favorite': result[1] if result else False,
+                        'remark': result[2] if (result and result[2] is not None) else '',
                         'has_review': has_review
                     })
                     print(f"已发送曲谱码到前端: {current_content}")
@@ -432,7 +441,7 @@ def get_scores():
         
         # 构建SQL查询
         query = '''
-        SELECT score_code, completion, is_favorite, created_at 
+        SELECT score_code, completion, is_favorite, remark, created_at 
         FROM scores 
         '''
         if conditions:
@@ -458,7 +467,8 @@ def get_scores():
             'score_code': s[0],
             'completion': s[1],
             'is_favorite': bool(s[2]),
-            'created_at': s[3],
+            'remark': s[3] or '',
+            'created_at': s[4],
             'has_review': s[0] in has_map   # ★ 新增字段
         } for s in rows])
     except Exception as e:
@@ -555,6 +565,104 @@ def toggle_favorite(score_code):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/scores/<score_code>/remark', methods=['GET', 'POST'])
+def handle_remark(score_code):
+    if not is_valid_score_code(score_code):
+        return jsonify({'success': False, 'error': '无效的曲谱码'}), 400
+    try:
+        if request.method == 'GET':
+            conn = sqlite3.connect('scores.db')
+            c = conn.cursor()
+            c.execute('SELECT remark FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (score_code,))
+            row = c.fetchone()
+            conn.close()
+            remark = ''
+            if row and row[0] is not None:
+                remark = row[0]
+            return jsonify({'success': True, 'remark': remark})
+
+        data = request.get_json(silent=True) or {}
+        remark = data.get('remark', '')
+        if remark is None:
+            remark = ''
+        remark = remark.strip()
+
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        c.execute('SELECT id FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (score_code,))
+        existing = c.fetchone()
+        if existing:
+            c.execute('UPDATE scores SET remark = ?, created_at = CURRENT_TIMESTAMP WHERE score_code = ?', (remark, score_code))
+        else:
+            c.execute('''
+                INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, remark, created_at)
+                VALUES (?, 0, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
+            ''', (score_code, remark))
+        conn.commit()
+        conn.close()
+
+        socketio.emit('remark_update', {
+            'score_code': score_code,
+            'remark': remark
+        })
+        return jsonify({'success': True, 'remark': remark})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/scores/remarks/batch', methods=['POST'])
+def batch_update_remarks():
+    try:
+        data = request.get_json(silent=True) or {}
+        codes = data.get('score_codes') or []
+        remark = data.get('remark', '')
+        if remark is None:
+            remark = ''
+        remark = remark.strip()
+
+        if not isinstance(codes, list):
+            return jsonify({'success': False, 'error': '参数格式错误'}), 400
+
+        valid_codes = [code for code in codes if is_valid_score_code(code)]
+        if not valid_codes:
+            return jsonify({'success': False, 'error': '未提供有效的曲谱码'}), 400
+
+        unique_codes = list(dict.fromkeys(valid_codes))
+
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+
+        placeholders = ','.join(['?'] * len(unique_codes))
+        c.execute(f'SELECT DISTINCT score_code FROM scores WHERE score_code IN ({placeholders})', unique_codes)
+        existing_codes = {row[0] for row in c.fetchall()}
+
+        missing_codes = [code for code in unique_codes if code not in existing_codes]
+
+        if existing_codes:
+            existing_list = list(existing_codes)
+            placeholders = ','.join(['?'] * len(existing_list))
+            c.execute(f'UPDATE scores SET remark = ?, created_at = CURRENT_TIMESTAMP WHERE score_code IN ({placeholders})',
+                      [remark, *existing_list])
+
+        if missing_codes:
+            payloads = [(code, remark) for code in missing_codes]
+            c.executemany('''
+                INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, remark, created_at)
+                VALUES (?, 0, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
+            ''', payloads)
+
+        conn.commit()
+        conn.close()
+
+        for code in unique_codes:
+            socketio.emit('remark_update', {
+                'score_code': code,
+                'remark': remark
+            })
+
+        return jsonify({'success': True, 'remark': remark, 'count': len(unique_codes)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/scores/stats', methods=['GET'])
 def get_stats():
     try:
@@ -591,6 +699,20 @@ def batch_query_scores():
         min_completion = data.get('min_completion')
         max_completion = data.get('max_completion')
         favorite = data.get('favorite')
+        include_remark_val = data.get('include_remark')
+        exclude_remark_val = data.get('exclude_remark')
+
+        def normalize_keywords(raw):
+            if not raw:
+                return []
+            if isinstance(raw, list):
+                items = raw
+            else:
+                items = re.split(r'[\n,;]+', str(raw))
+            return [item.strip() for item in items if item and item.strip()]
+
+        include_keywords = [kw.lower() for kw in normalize_keywords(include_remark_val)]
+        exclude_keywords = [kw.lower() for kw in normalize_keywords(exclude_remark_val)]
 
         # 调试打印参数
         #print("score_codes:", score_codes)
@@ -614,7 +736,7 @@ def batch_query_scores():
 
         # 只查所有 score_codes
         c.execute(
-            f"SELECT score_code, completion, is_favorite FROM scores WHERE score_code IN ({','.join(['?']*len(score_codes))}) GROUP BY score_code ORDER BY MAX(created_at) DESC",
+            f"SELECT score_code, completion, is_favorite, remark FROM scores WHERE score_code IN ({','.join(['?']*len(score_codes))}) GROUP BY score_code ORDER BY MAX(created_at) DESC",
             score_codes
         )
         db_results = {row[0]: row for row in c.fetchall()}
@@ -628,12 +750,13 @@ def batch_query_scores():
             row = db_results.get(code)
             if not row:
                 # 数据库没有的曲谱码也要返回（如 completion=None, is_favorite=False）
-                results.append({'score_code': code, 'completion': None, 'is_favorite': False})
+                results.append({'score_code': code, 'completion': None, 'is_favorite': False, 'remark': ''})
                 continue
             results.append({
                 'score_code': row[0],
                 'completion': row[1],
-                'is_favorite': bool(row[2])
+                'is_favorite': bool(row[2]),
+                'remark': row[3] or ''
             })
 
         # 排除后打印结果
@@ -667,6 +790,19 @@ def batch_query_scores():
 
         for r in results:
             r['has_review'] = r['score_code'] in has_map  # ★ 新增字段
+
+        def match_remark(value):
+            text = (value or '').lower()
+            for kw in include_keywords:
+                if kw not in text:
+                    return False
+            for kw in exclude_keywords:
+                if kw in text:
+                    return False
+            return True
+
+        if include_keywords or exclude_keywords:
+            results = [r for r in results if match_remark(r.get('remark', ''))]
 
         return jsonify({
             'success': True,
@@ -702,7 +838,7 @@ def fetch_jianshang():
         results = []
         for score_code in score_codes:
             c.execute('''
-                SELECT score_code, completion, is_favorite 
+                SELECT score_code, completion, is_favorite, remark
                 FROM scores 
                 WHERE score_code = ? 
                 ORDER BY created_at DESC 
@@ -714,13 +850,15 @@ def fetch_jianshang():
                 results.append({
                     'score_code': result[0],
                     'completion': result[1],
-                    'is_favorite': bool(result[2])
+                    'is_favorite': bool(result[2]),
+                    'remark': result[3] or ''
                 })
             else:
                 results.append({
                     'score_code': score_code,
                     'completion': None,
-                    'is_favorite': False
+                    'is_favorite': False,
+                    'remark': ''
                 })
         
         conn.close()
@@ -1340,12 +1478,13 @@ def list_liked_reviews():
         codes = [r[0] for r in rows]
         completion_map = {}
         favorite_map = {}
+        remark_map = {}
         if codes:
             conn_s = sqlite3.connect('scores.db')
             cs = conn_s.cursor()
             ph = ','.join(['?'] * len(codes))
             cs.execute(f'''
-                SELECT s.score_code, s.completion, s.is_favorite
+                SELECT s.score_code, s.completion, s.is_favorite, s.remark
                 FROM scores s
                 JOIN (
                     SELECT score_code, MAX(created_at) AS latest_time
@@ -1354,9 +1493,10 @@ def list_liked_reviews():
                 ) ls ON s.score_code = ls.score_code AND s.created_at = ls.latest_time
                 WHERE s.score_code IN ({ph})
             ''', codes)
-            for code, comp, fav in cs.fetchall():
+            for code, comp, fav, remark in cs.fetchall():
                 completion_map[code] = comp
                 favorite_map[code] = bool(fav)
+                remark_map[code] = remark or ''
             conn_s.close()
 
         # 3) 拼装返回
@@ -1369,7 +1509,8 @@ def list_liked_reviews():
                 'video_url': video_path,
                 'created_at': created_at,
                 'completion': completion_map.get(code),
-                'is_favorite': favorite_map.get(code, False)
+                'is_favorite': favorite_map.get(code, False),
+                'remark': remark_map.get(code, '')
             })
 
         return jsonify({'success': True, 'results': data})

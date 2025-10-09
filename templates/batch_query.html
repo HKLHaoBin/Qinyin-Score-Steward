@@ -36,8 +36,16 @@
         <div class="query-area">
             <div class="query-flex-grid">
                 <div class="input-row"> 
-                    <textarea class="query-textarea" id="scoreCodes" placeholder="请输入包含曲谱码的文本"></textarea>
-                    <textarea class="query-textarea" id="excludeCodes" placeholder="请输入包含曲谱码的文本"></textarea>
+                    <div class="query-column">
+                        <label class="remark-label" for="includeRemark">备注（包含）</label>
+                        <input class="remark-input" type="text" id="includeRemark" placeholder="多个条件可用换行或逗号分隔">
+                        <textarea class="query-textarea" id="scoreCodes" placeholder="请输入包含曲谱码的文本"></textarea>
+                    </div>
+                    <div class="query-column">
+                        <label class="remark-label" for="excludeRemark">备注（排除）</label>
+                        <input class="remark-input" type="text" id="excludeRemark" placeholder="多个条件可用换行或逗号分隔">
+                        <textarea class="query-textarea" id="excludeCodes" placeholder="请输入包含曲谱码的文本"></textarea>
+                    </div>
                 </div>
                 <div class="button-row">
                     <button class="query-btn" id="queryBtn">查询</button>
@@ -54,7 +62,10 @@
             <label class="filter-label">
                 <input type="checkbox" id="hideFavorite"> 隐藏收藏
             </label>
-            <button id="randomCopyBtn">随机复制</button>
+            <div class="action-row">
+                <button id="randomCopyBtn">随机复制</button>
+                <button id="batchRemarkBtn">批量备注</button>
+            </div>
             <button id="createPoolFromBatchBtn">创建池</button>
             <div id="randomCopyInfo"></div>
         </div>
@@ -85,6 +96,27 @@
                 <tbody id="resultsBody"></tbody>
             </table>
         </div>
+    </div>
+
+    <!-- 备注弹窗 -->
+    <div id="remarkModal" class="qyj-modal" aria-hidden="true">
+      <div class="qyj-modal__backdrop" data-close-remark></div>
+      <div class="qyj-modal__card" role="dialog" aria-modal="true" aria-labelledby="remarkTitle">
+        <div class="qyj-modal__header">
+          <h3 id="remarkTitle">编辑备注</h3>
+          <button class="qyj-modal__close" id="remarkCloseBtn" aria-label="关闭">✕</button>
+        </div>
+        <div id="remarkSummary" class="qyj-tip-sm" style="display:none;"></div>
+        <div class="qyj-field">
+          <label class="qyj-label" for="remarkTextarea">备注内容</label>
+          <textarea id="remarkTextarea" rows="4" maxlength="200" class="qyj-textarea" placeholder="记录作者、来源或其他说明"></textarea>
+        </div>
+        <div class="qyj-modal__actions">
+          <button id="remarkCancelBtn" class="qyj-btn qyj-btn--ghost">取消</button>
+          <button id="remarkSaveBtn" class="qyj-btn qyj-btn--primary">保存备注</button>
+        </div>
+        <div id="remarkMsg" class="qyj-msg" aria-live="polite"></div>
+      </div>
     </div>
 
     <!-- 评价弹窗（批量页复用） -->
