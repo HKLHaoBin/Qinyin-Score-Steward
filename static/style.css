@@ -392,6 +392,12 @@ h1 {
     align-items: center;
 }
 
+.favorite-indicator {
+    font-size: 1.3em;
+    color: #ffc107;
+    line-height: 1;
+}
+
 .action-buttons {
     display: inline-flex;
     gap: 5px;

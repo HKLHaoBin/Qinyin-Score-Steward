@@ -496,34 +496,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const actionWrap = document.createElement('div');
                 actionWrap.className = 'table-action-wrap';
 
-                const favoriteBtnEl = document.createElement('button');
-                favoriteBtnEl.className = 'favorite-btn';
-                favoriteBtnEl.textContent = result.is_favorite ? '★' : '☆';
-                favoriteBtnEl.addEventListener('click', async () => {
-                    favoriteBtnEl.disabled = true;
-                    try {
-                        const resp = await fetch(`/api/scores/${result.score_code}/favorite`, {
-                            method: 'POST'
-                        });
-                        const data = await resp.json();
-                        if (data.success) {
-                            result.is_favorite = data.is_favorite;
-                            favoriteBtnEl.textContent = data.is_favorite ? '★' : '☆';
-                            if (lastRandomScore && lastRandomScore.score_code === result.score_code) {
-                                lastRandomScore.is_favorite = data.is_favorite;
-                                updateRandomCopyCard(lastRandomScore);
-                            }
-                        } else {
-                            showToast(data.error || '更新收藏失败');
-                        }
-                    } catch (error) {
-                        console.error('收藏更新失败', error);
-                        showToast('更新收藏失败');
-                    } finally {
-                        favoriteBtnEl.disabled = false;
-                    }
-                });
-                actionWrap.appendChild(favoriteBtnEl);
+                const favoriteIndicator = document.createElement('span');
+                favoriteIndicator.className = 'favorite-indicator';
+                favoriteIndicator.textContent = result.is_favorite ? '★' : '☆';
+                favoriteIndicator.title = result.is_favorite ? '已收藏' : '未收藏';
+                actionWrap.appendChild(favoriteIndicator);
 
                 const remarkText = (result.remark || '').toString();
                 const remarkExists = remarkText.trim().length > 0;
