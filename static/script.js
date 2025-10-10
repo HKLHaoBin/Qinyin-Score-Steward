@@ -219,8 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
             updateRemarkButtonState();
             if (data.exists) {
                 statusBox.className = 'status-box exists';
-                document.getElementById('currentCompletion').textContent = data.completion + '%';
-                completionInput.value = data.completion;
+                const completionValue = Number.isInteger(data.completion) ? data.completion : null;
+                const completionText = completionValue !== null ? `${completionValue}%` : '-';
+                document.getElementById('currentCompletion').textContent = completionText;
+                completionInput.value = completionValue !== null ? completionValue : '';
                 favoriteBtn.textContent = data.is_favorite ? '★' : '☆';
             } else {
                 statusBox.className = 'status-box not-exists';

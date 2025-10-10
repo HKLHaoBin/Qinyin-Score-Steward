@@ -663,8 +663,8 @@ def toggle_favorite(score_code):
             # 如果记录不存在，创建新记录并标记为收藏
             c.execute('''
                 INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, created_at) 
-                VALUES (?, 0, 0, 'CN', 1, CURRENT_TIMESTAMP)
-            ''', (score_code,))
+                VALUES (?, ?, 0, 'CN', 1, CURRENT_TIMESTAMP)
+            ''', (score_code, None))
             conn.commit()
             conn.close()
             
@@ -709,8 +709,8 @@ def handle_remark(score_code):
         else:
             c.execute('''
                 INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, remark, created_at)
-                VALUES (?, 0, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
-            ''', (score_code, remark))
+                VALUES (?, ?, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
+            ''', (score_code, None, remark))
         conn.commit()
         conn.close()
 
@@ -757,10 +757,10 @@ def batch_update_remarks():
                       [remark, *existing_list])
 
         if missing_codes:
-            payloads = [(code, remark) for code in missing_codes]
+            payloads = [(code, None, remark) for code in missing_codes]
             c.executemany('''
                 INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, remark, created_at)
-                VALUES (?, 0, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
             ''', payloads)
 
         conn.commit()
