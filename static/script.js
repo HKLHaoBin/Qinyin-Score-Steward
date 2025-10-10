@@ -623,9 +623,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const videoFileName = document.getElementById('videoFileName');
       const currentScoreEl = document.getElementById('currentScoreCode');
       const reviewTitle = document.getElementById('reviewTitle');
+      const reviewVideoSourceField = document.getElementById('reviewVideoSourceField');
+      const videoSourceRadios = document.querySelectorAll('input[name="reviewVideoSource"]');
+      const reviewUrlRow = document.getElementById('reviewUrlRow');
+      const videoUrlInput = document.getElementById('reviewVideoUrl');
       const reviewFileRow = document.getElementById('reviewFileRow');
       const reviewPreviewRow = document.getElementById('reviewPreviewRow');
       const reviewVideoPreview = document.getElementById('reviewVideoPreview');
+      const reviewEmbedPreview = document.getElementById('reviewEmbedPreview');
 
       // 检查必要的元素是否存在
       if (!reviewBtn || !reviewModal || !starGroup || !ratingInput) {
@@ -638,6 +643,73 @@ document.addEventListener('DOMContentLoaded', () => {
       // —— 工具函数 ——
       const isValidScore = (v) => /^\d{5,}$/.test(String(v || '').trim());
       const isVisible = (el) => !!el && window.getComputedStyle(el).display !== 'none' && el.offsetParent !== null;
+      const updateVideoSourceUI = (value) => {
+        const source = value === 'external' ? 'external' : 'upload';
+        if (reviewFileRow) {
+          reviewFileRow.style.display = source === 'upload' ? 'block' : 'none';
+        }
+        if (reviewUrlRow) {
+          reviewUrlRow.style.display = source === 'external' ? 'block' : 'none';
+        }
+      };
+      const detectClientVideoType = (value, fallback = 'none') => {
+        if (!value) return fallback;
+        const trimmed = String(value).trim();
+        if (!trimmed) return fallback;
+        if (trimmed.toLowerCase().startsWith('<iframe')) return 'embed';
+        if (/^https?:\/\//i.test(trimmed)) return 'url';
+        return fallback;
+      };
+      const getSelectedVideoSource = () => {
+        const radios = Array.from(videoSourceRadios || []);
+        const selected = radios.find(r => r.checked);
+        return selected ? selected.value : 'upload';
+      };
+      const selectVideoSource = (value) => {
+        const radios = Array.from(videoSourceRadios || []);
+        radios.forEach(r => {
+          r.checked = r.value === value;
+        });
+        updateVideoSourceUI(value);
+      };
+      const resetPreview = () => {
+        if (reviewVideoPreview) {
+          try {
+            reviewVideoPreview.pause();
+          } catch (e) {
+            // ignore
+          }
+          reviewVideoPreview.removeAttribute('src');
+          reviewVideoPreview.style.display = 'none';
+        }
+        if (reviewEmbedPreview) {
+          reviewEmbedPreview.innerHTML = '';
+          reviewEmbedPreview.style.display = 'none';
+        }
+        if (reviewPreviewRow) {
+          reviewPreviewRow.style.display = 'none';
+        }
+      };
+      const showPreview = (videoType, videoValue) => {
+        resetPreview();
+        if (!videoType || !videoValue) {
+          return;
+        }
+        if (reviewPreviewRow) {
+          reviewPreviewRow.style.display = 'block';
+        }
+        if (videoType === 'embed') {
+          if (reviewEmbedPreview) {
+            reviewEmbedPreview.innerHTML = videoValue;
+            reviewEmbedPreview.style.display = 'block';
+          }
+        } else {
+          if (reviewVideoPreview) {
+            reviewVideoPreview.src = videoValue;
+            reviewVideoPreview.style.display = 'block';
+          }
+        }
+      };
 
       // —— 同步“爱心”按钮的显示时机：与“收藏”按钮一致 ——
       function syncReviewButtonVisibility() {
@@ -708,11 +780,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      // 视频来源切换
+      const handleVideoSourceChange = () => {
+        updateVideoSourceUI(getSelectedVideoSource());
+      };
+      if (videoSourceRadios && videoSourceRadios.length > 0) {
+        Array.from(videoSourceRadios).forEach(radio => {
+          radio.addEventListener('change', handleVideoSourceChange);
+        });
+        handleVideoSourceChange();
+      } else {
+        updateVideoSourceUI('upload');
+      }
+
       // 渲染查看模式
       function renderViewMode(reviewData) {
         if (reviewTitle) reviewTitle.textContent = '查看评价';
+        if (reviewVideoSourceField) reviewVideoSourceField.style.display = 'none';
         if (reviewFileRow) reviewFileRow.style.display = 'none';
-        if (reviewPreviewRow) reviewPreviewRow.style.display = 'block';
+        if (reviewUrlRow) reviewUrlRow.style.display = 'none';
 
         // 设置只读状态
         if (ratingInput) {
@@ -725,13 +811,8 @@ document.addEventListener('DOMContentLoaded', () => {
           commentInput.setAttribute('readonly', 'readonly');
         }
 
-        // 显示视频预览
-        if (reviewData.video_url && reviewVideoPreview) {
-          reviewVideoPreview.src = reviewData.video_url;
-          if (reviewPreviewRow) reviewPreviewRow.style.display = 'block';
-        } else if (reviewPreviewRow) {
-          reviewPreviewRow.style.display = 'none';
-        }
+        const videoType = reviewData.video_type || detectClientVideoType(reviewData.video_url);
+        showPreview(videoType, reviewData.video_url);
 
         // 隐藏提交按钮
         if (reviewSubmitBtn) reviewSubmitBtn.style.display = 'none';
@@ -740,8 +821,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // 渲染创建模式
       function renderCreateMode() {
         if (reviewTitle) reviewTitle.textContent = '添加评价';
-        if (reviewFileRow) reviewFileRow.style.display = 'block';
-        if (reviewPreviewRow) reviewPreviewRow.style.display = 'none';
+        if (reviewVideoSourceField) reviewVideoSourceField.style.display = 'block';
+        selectVideoSource('upload');
+        resetPreview();
 
         // 清空并恢复可编辑状态
         if (ratingInput) {
@@ -755,6 +837,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (videoInput) videoInput.value = '';
         if (videoFileName) videoFileName.textContent = '未选择文件';
+        if (videoUrlInput) videoUrlInput.value = '';
 
         // 显示提交按钮
         if (reviewSubmitBtn) reviewSubmitBtn.style.display = 'block';
@@ -794,6 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       function closeModal() {
+        resetPreview();
         reviewModal.classList.remove('is-open');
         reviewModal.setAttribute('aria-hidden', 'true');
       }
@@ -876,23 +960,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (reviewMsg) reviewMsg.textContent = '曲谱码无效';
             return;
           }
+          if (reviewMsg) reviewMsg.textContent = '';
 
           // 检查评语是否为空
-          const comment = commentInput.value.trim();
+          const comment = (commentInput?.value || '').trim();
           if (!comment) {
             if (reviewMsg) reviewMsg.textContent = '评语不能为空';
             return;
           }
 
-          const rating = Number(ratingInput.value || 5);
+          const rating = Number(ratingInput?.value || 5);
           if (!(rating >= 1 && rating <= 5)) {
             if (reviewMsg) reviewMsg.textContent = '评分必须是 1-5';
-            return;
-          }
-
-          // 检查视频是否已选择
-          if (!videoInput || !videoInput.files || !videoInput.files[0]) {
-            if (reviewMsg) reviewMsg.textContent = '请选择要上传的视频文件';
             return;
           }
 
@@ -900,7 +979,24 @@ document.addEventListener('DOMContentLoaded', () => {
           fd.append('score_code', currentScoreCode);
           fd.append('rating', String(rating));
           fd.append('comment', comment);
-          fd.append('video', videoInput.files[0]);
+
+          const videoSource = getSelectedVideoSource();
+          if (videoSource === 'external') {
+            const externalValue = (videoUrlInput?.value || '').trim();
+            if (!externalValue) {
+              if (reviewMsg) reviewMsg.textContent = '请填写视频链接或嵌入代码';
+              return;
+            }
+            fd.append('video_source', 'external');
+            fd.append('video_url', externalValue);
+          } else {
+            if (!videoInput || !videoInput.files || !videoInput.files[0]) {
+              if (reviewMsg) reviewMsg.textContent = '请选择要上传的视频文件';
+              return;
+            }
+            fd.append('video_source', 'upload');
+            fd.append('video', videoInput.files[0]);
+          }
 
           reviewSubmitBtn.disabled = true;
           if (reviewMsg) reviewMsg.textContent = '正在保存...';

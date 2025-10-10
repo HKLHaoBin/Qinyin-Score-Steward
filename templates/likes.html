@@ -158,6 +158,8 @@
     .viewer-meta { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin: 6px 0 10px; }
     .viewer-comment { white-space:pre-wrap; line-height:1.6; font-size:14px; opacity:.95; padding:10px; border:1px dashed var(--border,#e2e2e2); border-radius:10px; }
     .viewer-video { width:100%; border-radius:12px; margin-top:10px; display:block; }
+    .viewer-embed { position:relative; width:100%; padding-top:56.25%; border-radius:12px; overflow:hidden; margin-top:10px; background:#000; display:none; }
+    .viewer-embed iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
     .viewer-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
   </style>
 </head>
@@ -227,6 +229,7 @@
       </div>
       <div id="viewerComment" class="viewer-comment"></div>
       <video id="viewerVideo" class="viewer-video" controls style="display:none;"></video>
+      <div id="viewerEmbed" class="viewer-embed"></div>
       <div class="viewer-actions">
         <button id="viewerCopy" class="btn">复制曲谱码</button>
         <button id="viewerClose2" class="btn primary">关闭</button>
@@ -275,6 +278,15 @@
       ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
     }
 
+    function detectVideoType(value, fallback = 'none'){
+      if (!value) return fallback;
+      const trimmed = String(value).trim();
+      if (!trimmed) return fallback;
+      if (trimmed.toLowerCase().startsWith('<iframe')) return 'embed';
+      if (/^https?:\/\//i.test(trimmed)) return 'url';
+      return fallback;
+    }
+
     function createCardElement(item, options = {}){
       const card = document.createElement('div');
       card.className = 'likes-card';
@@ -316,10 +328,19 @@
       $('#viewerTime').textContent = new Date(item.created_at.replace(' ', 'T')).toLocaleString();
       $('#viewerComment').textContent = item.comment || '（无评语）';
       const v = $('#viewerVideo');
-      if (item.video_url){
+      const embed = $('#viewerEmbed');
+      if (embed) { embed.innerHTML = ''; embed.style.display = 'none'; }
+      if (v) {
+        try { v.pause(); } catch(e) { /* ignore */ }
+        v.removeAttribute('src');
+        v.style.display = 'none';
+      }
+      const videoType = item.video_type || detectVideoType(item.video_url);
+      if (videoType === 'embed' && embed && item.video_url){
+        embed.innerHTML = item.video_url;
+        embed.style.display = 'block';
+      } else if (item.video_url && v){
         v.src = item.video_url; v.style.display = 'block';
-      } else {
-        v.removeAttribute('src'); v.style.display = 'none';
       }
       $('#viewerModal').classList.add('is-open');
       $('#viewerModal').setAttribute('aria-hidden','false');
@@ -327,6 +348,17 @@
     }
 
     function closeViewer(){
+      const v = $('#viewerVideo');
+      const embed = $('#viewerEmbed');
+      if (v) {
+        try { v.pause(); } catch(e) { /* ignore */ }
+        v.removeAttribute('src');
+        v.style.display = 'none';
+      }
+      if (embed) {
+        embed.innerHTML = '';
+        embed.style.display = 'none';
+      }
       $('#viewerModal').classList.remove('is-open');
       $('#viewerModal').setAttribute('aria-hidden','true');
     }

@@ -18,6 +18,8 @@ from werkzeug.utils import secure_filename
 import tempfile
 import ffmpeg
 from werkzeug.exceptions import RequestEntityTooLarge
+from urllib.parse import urlparse
+import html
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
@@ -34,6 +36,103 @@ VIDEO_COMPRESS_TARGET_SIZE = 450 * 1024 * 1024  # 压缩目标大小 450MB以内
 
 def allowed_video(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTS
+
+IFRAME_PATTERN = re.compile(r'^<iframe\b([^>]*)>\s*</iframe\s*>$', re.IGNORECASE | re.DOTALL)
+ATTR_PATTERN = re.compile(r'([a-zA-Z0-9_-]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\')')
+BILIBILI_ALLOWED_HOSTS = {'player.bilibili.com'}
+
+
+def sanitize_bilibili_embed(embed_html: str):
+    """
+    仅允许来自 B 站播放器域名的 iframe，并生成干净的标签字符串。
+    """
+    if not embed_html:
+        return None
+
+    snippet = embed_html.strip()
+    match = IFRAME_PATTERN.match(snippet)
+    if not match:
+        return None
+
+    attrs_segment = match.group(1)
+    attrs = {}
+    for name, dbl, sgl in ATTR_PATTERN.findall(attrs_segment):
+        value = dbl or sgl or ''
+        attrs[name.lower()] = value.strip()
+
+    raw_src = attrs.get('src', '')
+    if not raw_src:
+        return None
+
+    if raw_src.startswith('//'):
+        normalized_src = f"https:{raw_src}"
+    else:
+        normalized_src = raw_src
+
+    parsed = urlparse(normalized_src)
+    if parsed.scheme not in ('http', 'https'):
+        return None
+    if parsed.netloc not in BILIBILI_ALLOWED_HOSTS:
+        return None
+
+    safe_src = html.escape(normalized_src, quote=True)
+
+    # 输出允许的属性，其他全部丢弃
+    output_attrs = [
+        f'src="{safe_src}"',
+        'allowfullscreen="true"',
+        'frameborder="0"',
+        'scrolling="no"',
+        'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"',
+        'referrerpolicy="strict-origin-when-cross-origin"',
+    ]
+    return f"<iframe {' '.join(output_attrs)}></iframe>"
+
+
+def sanitize_external_video_reference(raw_value: str):
+    """
+    对外部视频链接或嵌入代码进行校验与归一化。
+    返回 (clean_value, video_type, error_message)。
+    """
+    if raw_value is None:
+        return None, None, '请提供视频链接或嵌入代码'
+
+    cleaned = raw_value.strip()
+    if not cleaned:
+        return None, None, '请提供视频链接或嵌入代码'
+
+    # B 站 iframe 嵌入
+    if cleaned.lower().startswith('<iframe'):
+        sanitized = sanitize_bilibili_embed(cleaned)
+        if not sanitized:
+            return None, None, '仅支持 B站分享中的嵌入代码'
+        return sanitized, 'embed', None
+
+    # 普通 http(s) 链接
+    normalized = cleaned
+    if cleaned.startswith('//'):
+        normalized = f"https:{cleaned}"
+
+    parsed = urlparse(normalized)
+    if parsed.scheme not in ('http', 'https'):
+        return None, None, '视频链接必须以 http 或 https 开头'
+    if not parsed.netloc:
+        return None, None, '视频链接无效'
+
+    return normalized, 'url', None
+
+
+def detect_video_type(video_value):
+    if not video_value:
+        return 'none'
+    stripped = video_value.strip()
+    if not stripped:
+        return 'none'
+    if stripped.lower().startswith('<iframe'):
+        return 'embed'
+    if stripped.startswith('http://') or stripped.startswith('https://'):
+        return 'url'
+    return 'file'
 
 def compress_video(input_path, output_path, target_size_mb=450):
     """压缩视频到目标大小"""
@@ -1254,6 +1353,8 @@ def create_review():
         comment = (request.form.get('comment') or '').strip()
         is_top_raw = (request.form.get('is_top') or '').strip()
         video = request.files.get('video')
+        video_source = (request.form.get('video_source') or 'upload').strip().lower()
+        external_video_value = (request.form.get('video_url') or '').strip()
 
         # 校验
         if not is_valid_score_code(score_code):
@@ -1269,15 +1370,24 @@ def create_review():
         except Exception:
             return jsonify({'success': False, 'error': '评分必须是 1-5 的整数'}), 400
 
-        # 校验视频文件
-        if not video or not video.filename:
-            return jsonify({'success': False, 'error': '请上传视频文件'}), 400
+        if video_source not in ('upload', 'external'):
+            return jsonify({'success': False, 'error': '视频来源无效'}), 400
 
         is_top = (is_top_raw.lower() in ('1', 'true', 'on', 'yes'))
 
-        # 保存视频（必填）
         saved_rel_url = None
-        if video and video.filename:
+        video_type = 'file'
+
+        if video_source == 'external':
+            clean_value, video_type, error_msg = sanitize_external_video_reference(external_video_value)
+            if error_msg:
+                return jsonify({'success': False, 'error': error_msg}), 400
+            saved_rel_url = clean_value
+        else:
+            # 校验视频文件
+            if not video or not video.filename:
+                return jsonify({'success': False, 'error': '请上传视频文件'}), 400
+
             if not allowed_video(video.filename):
                 return jsonify({'success': False, 'error': '不支持的视频格式'}), 400
             safe_name = secure_filename(video.filename)
@@ -1353,6 +1463,7 @@ def create_review():
             'rating': rating,
             'comment': comment,
             'video_url': saved_rel_url,
+            'video_type': video_type,
             'is_top': is_top
         })
     except Exception as e:
@@ -1401,6 +1512,7 @@ def get_review(score_code):
         'rating': row[0],
         'comment': row[1] or '',
         'video_url': row[2],
+        'video_type': detect_video_type(row[2]),
         'created_at': row[3],
     })
 
@@ -1507,6 +1619,7 @@ def list_liked_reviews():
                 'rating': rating,
                 'comment': comment or '',
                 'video_url': video_path,
+                'video_type': detect_video_type(video_path),
                 'created_at': created_at,
                 'completion': completion_map.get(code),
                 'is_favorite': favorite_map.get(code, False),
