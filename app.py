@@ -1529,7 +1529,7 @@ if __name__ == '__main__':
     # 启动时备份数据库
     backup_database()
 
-    print("千音雅集服务器启动 - 使用API爬虫模式")
+    print("千音谱司服务器启动 - 使用API爬虫模式")
 
     # 直接启动服务器（不使用线程）
     start_server()
