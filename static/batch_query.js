@@ -659,7 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
               完成率：<span class="completion-badge" style="cursor:pointer;">${completionText}</span>
             </div>
             <div class="actions-row" style="margin-top:8px; display:flex; gap:8px;">
-              <button class="like-btn">${hasReview ? '查看评价 ❤️' : '添加喜欢 ❤️'}</button>
+              <button class="like-btn">${hasReview ? '查看评价 ❤️' : '❤️'}</button>
               <button class="remark-btn random-remark-btn ${hasRemark ? 'has-remark' : ''}">备注</button>
             </div>
             <div class="remark-text">${remarkDisplay}</div>

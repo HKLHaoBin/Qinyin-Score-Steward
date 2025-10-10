@@ -134,6 +134,20 @@ def detect_video_type(video_value):
         return 'url'
     return 'file'
 
+
+def delete_uploaded_video_file(video_path):
+    if not video_path:
+        return
+    video_path = video_path.strip()
+    if not video_path.startswith('/uploads/videos/'):
+        return
+    uploads_root = os.path.join(os.path.dirname(__file__), video_path.lstrip('/'))
+    try:
+        if os.path.exists(uploads_root) and os.path.isfile(uploads_root):
+            os.remove(uploads_root)
+    except Exception as e:
+        print(f"删除旧视频文件失败: {e}")
+
 def compress_video(input_path, output_path, target_size_mb=450):
     """压缩视频到目标大小"""
     try:
@@ -552,7 +566,7 @@ def get_scores():
         conn.close()
 
         # —— 新增：批量查询这些 code 是否有评价 ——
-        codes = [r[0] for r in rows]
+        codes = [r[1] for r in rows]
         has_map = set()
         if codes:
             conn_r = sqlite3.connect('reviews.db')
@@ -1475,6 +1489,134 @@ def create_review():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/reviews/<int:review_id>', methods=['PUT'])
+def update_review(review_id):
+    conn = sqlite3.connect('reviews.db')
+    try:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT * FROM reviews WHERE id = ?', (review_id,))
+        row = c.fetchone()
+        if not row:
+            return jsonify({'success': False, 'error': '评价不存在'}), 404
+
+        score_code = row['score_code']
+        existing_video_path = row['video_path'] or ''
+
+        rating_raw = (request.form.get('rating') or '').strip()
+        comment = (request.form.get('comment') or '').strip()
+        video_source = (request.form.get('video_source') or 'keep').strip().lower()
+        video = request.files.get('video')
+        external_video_value = (request.form.get('video_url') or '').strip()
+
+        if not comment:
+            return jsonify({'success': False, 'error': '评语不能为空'}), 400
+
+        try:
+            rating = int(rating_raw)
+            if rating < 1 or rating > 5:
+                raise ValueError()
+        except Exception:
+            return jsonify({'success': False, 'error': '评分必须是 1-5 的整数'}), 400
+
+        if video_source not in ('keep', 'upload', 'external'):
+            return jsonify({'success': False, 'error': '视频来源无效'}), 400
+
+        saved_rel_url = existing_video_path
+        video_type = detect_video_type(existing_video_path)
+
+        if video_source == 'external':
+            clean_value, video_type, error_msg = sanitize_external_video_reference(external_video_value)
+            if error_msg:
+                return jsonify({'success': False, 'error': error_msg}), 400
+            if clean_value != existing_video_path:
+                delete_uploaded_video_file(existing_video_path)
+            saved_rel_url = clean_value
+        elif video_source == 'upload':
+            if not video or not video.filename:
+                return jsonify({'success': False, 'error': '请上传视频文件'}), 400
+            if not allowed_video(video.filename):
+                return jsonify({'success': False, 'error': '不支持的视频格式'}), 400
+
+            safe_name = secure_filename(video.filename)
+            final_name = f"{score_code}_{int(time.time())}_{safe_name}"
+            dst_path = os.path.join(app.config['UPLOAD_FOLDER'], final_name)
+
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+            temp_path = None
+            try:
+                temp_fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(safe_name)[1])
+                os.close(temp_fd)
+                video.save(temp_path)
+                print(f"编辑评价：视频文件已保存到临时位置: {temp_path}")
+
+                file_size = os.path.getsize(temp_path)
+                print(f"编辑评价：上传的视频文件大小: {file_size / (1024*1024):.2f} MB")
+
+                if file_size > VIDEO_COMPRESS_THRESHOLD:
+                    print("编辑评价：文件超过压缩阈值，开始压缩...")
+                    compressed_path = dst_path.replace(os.path.splitext(dst_path)[1], '_compressed.mp4')
+                    if compress_video(temp_path, compressed_path, VIDEO_COMPRESS_TARGET_SIZE / (1024*1024)):
+                        dst_path = compressed_path
+                        final_name = os.path.basename(compressed_path)
+                        print(f"编辑评价：视频压缩完成，保存到: {dst_path}")
+                    else:
+                        print("编辑评价：视频压缩失败，保存原始文件")
+                        shutil.move(temp_path, dst_path)
+                else:
+                    shutil.move(temp_path, dst_path)
+                    print(f"编辑评价：视频文件已保存到: {dst_path}")
+
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+                delete_uploaded_video_file(existing_video_path)
+            except Exception as save_error:
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+                print(f"编辑评价：保存视频文件时出错: {str(save_error)}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'success': False, 'error': f'保存视频文件失败: {str(save_error)}'}), 500
+
+            saved_rel_url = f"/uploads/videos/{final_name}"
+            video_type = 'file'
+
+        # 更新数据库
+        c.execute('''
+            UPDATE reviews
+            SET rating = ?, comment = ?, video_path = ?, created_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (rating, comment, saved_rel_url, review_id))
+        conn.commit()
+
+        c.execute('''
+            SELECT rating, comment, video_path, created_at
+            FROM reviews
+            WHERE id = ?
+        ''', (review_id,))
+        updated = c.fetchone()
+        return jsonify({
+            'success': True,
+            'id': review_id,
+            'score_code': score_code,
+            'rating': updated[0],
+            'comment': updated[1] or '',
+            'video_url': updated[2],
+            'video_type': detect_video_type(updated[2]),
+            'created_at': updated[3],
+        })
+    except Exception as e:
+        import traceback
+        error_info = traceback.format_exc()
+        print(f"更新评价时出错: {str(e)}")
+        print(f"详细错误信息:\n{error_info}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
 @app.route('/api/reviews/status')
 def review_status():
     score_code = (request.args.get('score_code') or '').strip()
@@ -1495,7 +1637,7 @@ def get_review(score_code):
     conn = sqlite3.connect('reviews.db')
     c = conn.cursor()
     c.execute('''
-        SELECT rating, comment, video_path, created_at
+        SELECT id, rating, comment, video_path, created_at
         FROM reviews
         WHERE score_code = ?
         ORDER BY created_at DESC
@@ -1509,11 +1651,12 @@ def get_review(score_code):
         'success': True,
         'has_review': True,
         'score_code': score_code,
-        'rating': row[0],
-        'comment': row[1] or '',
-        'video_url': row[2],
-        'video_type': detect_video_type(row[2]),
-        'created_at': row[3],
+        'review_id': row[0],
+        'rating': row[1],
+        'comment': row[2] or '',
+        'video_url': row[3],
+        'video_type': detect_video_type(row[3]),
+        'created_at': row[4],
     })
 
 # ========= 喜欢列表 API =========
@@ -1570,7 +1713,7 @@ def list_liked_reviews():
             order_sql = 'ORDER BY r.rating ASC, r.created_at DESC'
 
         sql = f'''
-            SELECT r.score_code, r.rating, r.comment, r.video_path, r.created_at
+            SELECT r.id, r.score_code, r.rating, r.comment, r.video_path, r.created_at
             FROM reviews r
             JOIN (
                 SELECT score_code, MAX(created_at) AS latest_time
@@ -1613,8 +1756,9 @@ def list_liked_reviews():
 
         # 3) 拼装返回
         data = []
-        for code, rating, comment, video_path, created_at in rows:
+        for review_id, code, rating, comment, video_path, created_at in rows:
             data.append({
+                'review_id': review_id,
                 'score_code': code,
                 'rating': rating,
                 'comment': comment or '',

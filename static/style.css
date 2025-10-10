@@ -966,10 +966,22 @@ h1 {
 .qyj-modal.is-open { display: block; }
 .qyj-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); backdrop-filter: blur(2px); }
 .qyj-modal__card {
-  position: relative; z-index: 1; margin: 7vh auto 0; width: min(560px, 94vw);
-  background: var(--card-bg,#fff); color: var(--fg,#222);
-  border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.2);
-  padding: 16px 16px 14px; animation: qyj-pop .16s ease-out;
+  position: relative;
+  z-index: 1;
+  margin: 7vh auto 0;
+  width: min(560px, 94vw);
+  max-height: 88vh;
+  background: var(--card-bg,#fff);
+  color: var(--fg,#222);
+  border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.2);
+  padding: 18px 20px 18px;
+  animation: qyj-pop .16s ease-out;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 @keyframes qyj-pop { from { transform: translateY(8px); opacity:.6; } to { transform:none; opacity:1; } }
 

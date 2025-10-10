@@ -148,10 +148,21 @@
     .qyj-modal.is-open { display: block; }
     .qyj-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); backdrop-filter: blur(2px); }
     .qyj-modal__card {
-      position: relative; z-index:1; margin: 8vh auto 0; width: min(620px, 94vw);
-      background: var(--card-bg,#fff); color: var(--fg,#222);
-      border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.2);
-      padding: 16px;
+      position: relative;
+      z-index:1;
+      margin: 8vh auto 0;
+      width: min(620px, 94vw);
+      max-height: 90vh;
+      background: var(--card-bg,#fff);
+      color: var(--fg,#222);
+      border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.2);
+      padding: 20px 22px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      box-sizing: border-box;
+      overflow-y: auto;
     }
     .qyj-modal__header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
     .qyj-modal__close { border:0; background:transparent; font-size:18px; cursor:pointer; opacity:.8; }
@@ -160,7 +171,7 @@
     .viewer-video { width:100%; border-radius:12px; margin-top:10px; display:block; }
     .viewer-embed { position:relative; width:100%; padding-top:56.25%; border-radius:12px; overflow:hidden; margin-top:10px; background:#000; display:none; }
     .viewer-embed iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
-    .viewer-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+    .viewer-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:auto; padding-top:8px; }
   </style>
 </head>
 <body>
@@ -227,12 +238,74 @@
         <span id="viewerFav" class="badge fav">收藏 -</span>
         <span id="viewerTime" class="muted"></span>
       </div>
-      <div id="viewerComment" class="viewer-comment"></div>
-      <video id="viewerVideo" class="viewer-video" controls style="display:none;"></video>
-      <div id="viewerEmbed" class="viewer-embed"></div>
-      <div class="viewer-actions">
+      <div id="viewerViewContent">
+        <div id="viewerComment" class="viewer-comment"></div>
+        <video id="viewerVideo" class="viewer-video" controls style="display:none;"></video>
+        <div id="viewerEmbed" class="viewer-embed"></div>
+      </div>
+      <div id="viewerEditContent" style="display:none;">
+        <div class="qyj-field">
+          <label class="qyj-label">打分</label>
+          <div id="viewerEditStars" class="qyj-stars" role="radiogroup" aria-label="喜欢程度 1 到 5 星">
+            <button type="button" class="qyj-star" data-val="1" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="2" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="3" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="4" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="5" aria-checked="true" role="radio">☆</button>
+          </div>
+          <input type="hidden" id="viewerEditRating" value="5">
+        </div>
+        <div class="qyj-field">
+          <label class="qyj-label" for="viewerEditComment">评语 *</label>
+          <textarea id="viewerEditComment" rows="4" class="qyj-textarea" placeholder="说说新的想法…"></textarea>
+        </div>
+        <div class="qyj-field" id="viewerEditVideoSourceField">
+          <label class="qyj-label">视频来源</label>
+          <div class="qyj-radio-group">
+            <label class="qyj-radio" id="viewerEditKeepWrapper">
+              <input type="radio" name="viewerEditVideoSource" value="keep" checked>
+              保留现有视频
+            </label>
+            <label class="qyj-radio">
+              <input type="radio" name="viewerEditVideoSource" value="upload">
+              上传新视频
+            </label>
+            <label class="qyj-radio">
+              <input type="radio" name="viewerEditVideoSource" value="external">
+              使用视频链接 / B站嵌入代码
+            </label>
+          </div>
+          <div class="qyj-tip-sm" id="viewerEditKeepTip">当前将保留已有的视频。</div>
+        </div>
+        <div class="qyj-field" id="viewerEditFileRow" style="display:none;">
+          <label class="qyj-label" for="viewerEditVideoFile">上传新视频</label>
+          <label class="qyj-file">
+            <input type="file" id="viewerEditVideoFile" accept=".mp4,.mov,.m4v,.webm,.avi,.mkv">
+            <span class="qyj-file__btn">选择文件</span>
+            <span class="qyj-file__name" id="viewerEditVideoFileName">未选择文件</span>
+          </label>
+          <div class="qyj-tip-sm">支持 mp4 / mov / webm / avi / mkv。</div>
+        </div>
+        <div class="qyj-field" id="viewerEditUrlRow" style="display:none;">
+          <label class="qyj-label" for="viewerEditVideoUrl">视频链接或嵌入代码</label>
+          <textarea id="viewerEditVideoUrl" rows="3" class="qyj-textarea" placeholder="粘贴视频 URL 或 B站嵌入代码"></textarea>
+          <div class="qyj-tip-sm">若切换为链接，将自动替换原有视频文件。</div>
+        </div>
+        <div class="qyj-field" id="viewerEditPreviewRow" style="display:none;">
+          <label class="qyj-label">预览</label>
+          <video id="viewerEditVideoPreview" controls style="width:100%; border-radius:10px; display:none;"></video>
+          <div id="viewerEditEmbedPreview" class="review-embed" style="display:none;"></div>
+        </div>
+        <div id="viewerEditMsg" class="qyj-msg"></div>
+      </div>
+      <div class="viewer-actions" id="viewerViewActions">
+        <button id="viewerEditBtn" class="btn">编辑</button>
         <button id="viewerCopy" class="btn">复制曲谱码</button>
         <button id="viewerClose2" class="btn primary">关闭</button>
+      </div>
+      <div class="viewer-actions" id="viewerEditActions" style="display:none;">
+        <button id="viewerEditCancel" class="btn">取消编辑</button>
+        <button id="viewerEditSubmit" class="btn primary">保存修改</button>
       </div>
     </div>
   </div>
@@ -287,6 +360,18 @@
       return fallback;
     }
 
+    function toast(text){
+      let t = document.querySelector('.qyj-toast');
+      if (!t) {
+        t = document.createElement('div');
+        t.className = 'qyj-toast';
+        document.body.appendChild(t);
+      }
+      t.textContent = text;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 1800);
+    }
+
     function createCardElement(item, options = {}){
       const card = document.createElement('div');
       card.className = 'likes-card';
@@ -309,63 +394,350 @@
           <div class="likes-actions">
             <button class="btn" data-act="copy">复制曲谱码</button>
             <button class="btn primary" data-act="view">查看评价</button>
+            <button class="btn" data-act="edit">编辑</button>
           </div>
         `;
       card.addEventListener('click', (e)=>{
         const act = e.target?.dataset?.act;
         if (act === 'copy') { copy(item.score_code); e.stopPropagation(); }
+        else if (act === 'edit') { openViewer(item, 'edit'); e.stopPropagation(); }
         else { openViewer(item); }
       });
       return card;
     }
 
-    function openViewer(item){
-      $('#viewerTitle').textContent = '评价详情';
-      $('#viewerCode').textContent = item.score_code;
-      $('#viewerStars').textContent = toStars(item.rating);
-      $('#viewerComp').textContent = '完成率 ' + (item.completion != null ? (item.completion + '%') : '-');
-      $('#viewerFav').textContent = '收藏 ' + (item.is_favorite ? '★' : '☆');
-      $('#viewerTime').textContent = new Date(item.created_at.replace(' ', 'T')).toLocaleString();
-      $('#viewerComment').textContent = item.comment || '（无评语）';
-      const v = $('#viewerVideo');
-      const embed = $('#viewerEmbed');
-      if (embed) { embed.innerHTML = ''; embed.style.display = 'none'; }
-      if (v) {
-        try { v.pause(); } catch(e) { /* ignore */ }
-        v.removeAttribute('src');
-        v.style.display = 'none';
+    let currentViewerItem = null;
+    let isEditMode = false;
+
+    const viewerModalEl = $('#viewerModal');
+    const viewerCloseBtn = $('#viewerClose');
+    const viewerClose2Btn = $('#viewerClose2');
+    const viewerCopyBtn = $('#viewerCopy');
+    const viewerEditBtn = $('#viewerEditBtn');
+    const viewerEditCancelBtn = $('#viewerEditCancel');
+    const viewerEditSubmitBtn = $('#viewerEditSubmit');
+    const viewerTitleEl = $('#viewerTitle');
+    const viewerCodeEl = $('#viewerCode');
+    const viewerStarsEl = $('#viewerStars');
+    const viewerCompEl = $('#viewerComp');
+    const viewerFavEl = $('#viewerFav');
+    const viewerTimeEl = $('#viewerTime');
+    const viewerCommentEl = $('#viewerComment');
+    const viewerVideoEl = $('#viewerVideo');
+    const viewerEmbedEl = $('#viewerEmbed');
+    const viewerViewContent = $('#viewerViewContent');
+    const viewerEditContent = $('#viewerEditContent');
+    const viewerViewActions = $('#viewerViewActions');
+    const viewerEditActions = $('#viewerEditActions');
+    const viewerEditStars = document.querySelectorAll('#viewerEditStars .qyj-star');
+    const viewerEditRatingInput = document.getElementById('viewerEditRating');
+    const viewerEditCommentInput = document.getElementById('viewerEditComment');
+    const viewerEditVideoSourceRadios = document.querySelectorAll('input[name="viewerEditVideoSource"]');
+    const viewerEditFileRow = $('#viewerEditFileRow');
+    const viewerEditUrlRow = $('#viewerEditUrlRow');
+    const viewerEditVideoFile = document.getElementById('viewerEditVideoFile');
+    const viewerEditVideoFileName = document.getElementById('viewerEditVideoFileName');
+    const viewerEditVideoUrlInput = document.getElementById('viewerEditVideoUrl');
+    const viewerEditPreviewRow = $('#viewerEditPreviewRow');
+    const viewerEditVideoPreview = document.getElementById('viewerEditVideoPreview');
+    const viewerEditEmbedPreview = document.getElementById('viewerEditEmbedPreview');
+    const viewerEditMsgEl = document.getElementById('viewerEditMsg');
+    const viewerEditKeepWrapper = document.getElementById('viewerEditKeepWrapper');
+    const viewerEditKeepTip = document.getElementById('viewerEditKeepTip');
+
+    function resetViewerMedia(){
+      if (viewerVideoEl) {
+        try { viewerVideoEl.pause(); } catch(e) { /* ignore */ }
+        viewerVideoEl.removeAttribute('src');
+        viewerVideoEl.style.display = 'none';
       }
+      if (viewerEmbedEl) {
+        viewerEmbedEl.innerHTML = '';
+        viewerEmbedEl.style.display = 'none';
+      }
+    }
+
+    function renderViewerView(item){
+      viewerTitleEl.textContent = '评价详情';
+      viewerCodeEl.textContent = item.score_code;
+      viewerStarsEl.textContent = toStars(item.rating);
+      viewerCompEl.textContent = '完成率 ' + (item.completion != null ? (item.completion + '%') : '-');
+      viewerFavEl.textContent = '收藏 ' + (item.is_favorite ? '★' : '☆');
+      viewerTimeEl.textContent = new Date(item.created_at.replace(' ', 'T')).toLocaleString();
+      viewerCommentEl.textContent = item.comment || '（无评语）';
+      resetViewerMedia();
       const videoType = item.video_type || detectVideoType(item.video_url);
-      if (videoType === 'embed' && embed && item.video_url){
-        embed.innerHTML = item.video_url;
-        embed.style.display = 'block';
-      } else if (item.video_url && v){
-        v.src = item.video_url; v.style.display = 'block';
+      if (videoType === 'embed' && viewerEmbedEl && item.video_url){
+        viewerEmbedEl.innerHTML = item.video_url;
+        viewerEmbedEl.style.display = 'block';
+      } else if (item.video_url && viewerVideoEl){
+        viewerVideoEl.src = item.video_url;
+        viewerVideoEl.style.display = 'block';
       }
-      $('#viewerModal').classList.add('is-open');
-      $('#viewerModal').setAttribute('aria-hidden','false');
-      $('#viewerCopy').onclick = () => copy(item.score_code);
+    }
+
+    function resetViewerEditPreview(){
+      if (viewerEditVideoPreview) {
+        try { viewerEditVideoPreview.pause(); } catch(e) { /* ignore */ }
+        viewerEditVideoPreview.removeAttribute('src');
+        viewerEditVideoPreview.style.display = 'none';
+      }
+      if (viewerEditEmbedPreview) {
+        viewerEditEmbedPreview.innerHTML = '';
+        viewerEditEmbedPreview.style.display = 'none';
+      }
+      if (viewerEditPreviewRow) viewerEditPreviewRow.style.display = 'none';
+    }
+
+    function showViewerEditPreview(videoType, videoValue){
+      resetViewerEditPreview();
+      if (!videoType || !videoValue) return;
+      if (viewerEditPreviewRow) viewerEditPreviewRow.style.display = 'block';
+      if (videoType === 'embed' && viewerEditEmbedPreview) {
+        viewerEditEmbedPreview.innerHTML = videoValue;
+        viewerEditEmbedPreview.style.display = 'block';
+      } else if (viewerEditVideoPreview) {
+        viewerEditVideoPreview.src = videoValue;
+        viewerEditVideoPreview.style.display = 'block';
+      }
+    }
+
+    function updateViewerEditVideoSourceUI(source){
+      if (viewerEditFileRow) viewerEditFileRow.style.display = source === 'upload' ? 'block' : 'none';
+      if (viewerEditUrlRow) viewerEditUrlRow.style.display = source === 'external' ? 'block' : 'none';
+      if (viewerEditKeepTip) {
+        if (source === 'keep') viewerEditKeepTip.textContent = '当前将保留已有的视频。';
+        else if (source === 'upload') viewerEditKeepTip.textContent = '上传后将替换当前视频。';
+        else viewerEditKeepTip.textContent = '将使用提供的链接或嵌入代码替换当前视频。';
+      }
+    }
+
+    function setViewerEditVideoSource(value){
+      Array.from(viewerEditVideoSourceRadios).forEach(radio => {
+        radio.checked = radio.value === value;
+      });
+      updateViewerEditVideoSourceUI(value);
+    }
+
+    function getViewerEditVideoSource(){
+      const selected = Array.from(viewerEditVideoSourceRadios).find(radio => radio.checked);
+      return selected ? selected.value : 'keep';
+    }
+
+    function paintViewerEditStars(n){
+      Array.from(viewerEditStars).forEach(btn => {
+        const v = Number(btn.dataset.val);
+        const active = v <= n;
+        btn.textContent = active ? '★' : '☆';
+        btn.setAttribute('aria-checked', String(v === n));
+        btn.classList.toggle('is-active', active);
+      });
+    }
+
+    function exitEditMode(){
+      isEditMode = false;
+      if (viewerEditMsgEl) viewerEditMsgEl.textContent = '';
+      if (viewerEditContent) viewerEditContent.style.display = 'none';
+      if (viewerEditActions) viewerEditActions.style.display = 'none';
+      if (viewerViewContent) viewerViewContent.style.display = 'block';
+      if (viewerViewActions) viewerViewActions.style.display = 'flex';
+      if (viewerEditVideoFile) viewerEditVideoFile.value = '';
+      if (viewerEditVideoFileName) viewerEditVideoFileName.textContent = '未选择文件';
+      if (viewerEditVideoUrlInput) viewerEditVideoUrlInput.value = '';
+      resetViewerEditPreview();
+    }
+
+    function enterEditMode(){
+      if (!currentViewerItem) return;
+      isEditMode = true;
+      if (viewerEditContent) viewerEditContent.style.display = 'block';
+      if (viewerEditActions) viewerEditActions.style.display = 'flex';
+      if (viewerViewContent) viewerViewContent.style.display = 'none';
+      if (viewerViewActions) viewerViewActions.style.display = 'none';
+      if (viewerEditMsgEl) viewerEditMsgEl.textContent = '';
+
+      const rating = Number(currentViewerItem.rating) || 5;
+      if (viewerEditRatingInput) viewerEditRatingInput.value = String(rating);
+      paintViewerEditStars(rating);
+      if (viewerEditCommentInput) viewerEditCommentInput.value = currentViewerItem.comment || '';
+
+      const hasVideo = !!(currentViewerItem.video_url && currentViewerItem.video_url.trim());
+      if (viewerEditKeepWrapper) viewerEditKeepWrapper.style.display = hasVideo ? 'inline-flex' : 'none';
+      const defaultSource = hasVideo ? 'keep' : 'external';
+      setViewerEditVideoSource(defaultSource);
+      if (!hasVideo && viewerEditKeepTip) viewerEditKeepTip.textContent = '当前无视频，可选择上传或提供链接。';
+      if (viewerEditVideoUrlInput) viewerEditVideoUrlInput.value = currentViewerItem.video_url || '';
+      showViewerEditPreview(currentViewerItem.video_type || detectVideoType(currentViewerItem.video_url), currentViewerItem.video_url);
+    }
+
+    async function submitViewerEdit(){
+      if (!currentViewerItem || !viewerEditSubmitBtn) return;
+      if (viewerEditMsgEl) viewerEditMsgEl.textContent = '';
+
+      const rating = Number(viewerEditRatingInput?.value || 5);
+      if (!(rating >= 1 && rating <= 5)) {
+        if (viewerEditMsgEl) viewerEditMsgEl.textContent = '评分必须是 1-5';
+        return;
+      }
+      const comment = (viewerEditCommentInput?.value || '').trim();
+      if (!comment) {
+        if (viewerEditMsgEl) viewerEditMsgEl.textContent = '评语不能为空';
+        return;
+      }
+
+      const videoSource = getViewerEditVideoSource();
+      const fd = new FormData();
+      fd.append('rating', String(rating));
+      fd.append('comment', comment);
+
+      if (videoSource === 'external') {
+        const externalValue = (viewerEditVideoUrlInput?.value || '').trim();
+        if (!externalValue) {
+          if (viewerEditMsgEl) viewerEditMsgEl.textContent = '请填写视频链接或嵌入代码';
+          return;
+        }
+        fd.append('video_source', 'external');
+        fd.append('video_url', externalValue);
+      } else if (videoSource === 'upload') {
+        const file = viewerEditVideoFile?.files?.[0];
+        if (!file) {
+          if (viewerEditMsgEl) viewerEditMsgEl.textContent = '请选择要上传的视频文件';
+          return;
+        }
+        fd.append('video_source', 'upload');
+        fd.append('video', file);
+      } else {
+        fd.append('video_source', 'keep');
+      }
+
+      viewerEditSubmitBtn.disabled = true;
+      const originalText = viewerEditSubmitBtn.textContent;
+      viewerEditSubmitBtn.textContent = '保存中…';
+
+      try {
+        const resp = await fetch(`/api/reviews/${currentViewerItem.review_id}`, {
+          method: 'PUT',
+          body: fd
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || '保存失败');
+        if (viewerEditMsgEl) viewerEditMsgEl.textContent = '保存成功！';
+        toast('评价已更新');
+
+        Object.assign(currentViewerItem, {
+          rating: data.rating,
+          comment: data.comment,
+          video_url: data.video_url,
+          video_type: data.video_type,
+          created_at: data.created_at
+        });
+
+        // 更新列表缓存
+        const idx = currentList.findIndex(r => r.review_id === currentViewerItem.review_id);
+        if (idx >= 0) {
+          currentList[idx] = { ...currentList[idx], ...currentViewerItem };
+        }
+
+        renderViewerView(currentViewerItem);
+        exitEditMode();
+        load(); // 刷新列表
+      } catch (error) {
+        const msg = error.message || '保存失败';
+        if (viewerEditMsgEl) viewerEditMsgEl.textContent = `保存失败：${msg}`;
+        toast(`保存失败：${msg}`);
+      } finally {
+        viewerEditSubmitBtn.disabled = false;
+        viewerEditSubmitBtn.textContent = originalText;
+      }
+    }
+
+    function openViewer(item, mode = 'view'){
+      currentViewerItem = { ...item };
+      renderViewerView(currentViewerItem);
+      exitEditMode();
+      if (mode === 'edit') {
+        enterEditMode();
+      }
+      viewerModalEl.classList.add('is-open');
+      viewerModalEl.setAttribute('aria-hidden','false');
+      if (viewerCopyBtn) viewerCopyBtn.onclick = () => copy(currentViewerItem.score_code);
     }
 
     function closeViewer(){
-      const v = $('#viewerVideo');
-      const embed = $('#viewerEmbed');
-      if (v) {
-        try { v.pause(); } catch(e) { /* ignore */ }
-        v.removeAttribute('src');
-        v.style.display = 'none';
-      }
-      if (embed) {
-        embed.innerHTML = '';
-        embed.style.display = 'none';
-      }
-      $('#viewerModal').classList.remove('is-open');
-      $('#viewerModal').setAttribute('aria-hidden','true');
+      exitEditMode();
+      resetViewerMedia();
+      viewerModalEl.classList.remove('is-open');
+      viewerModalEl.setAttribute('aria-hidden','true');
+      currentViewerItem = null;
     }
-    $('#viewerClose')?.addEventListener('click', closeViewer);
-    $('#viewerClose2')?.addEventListener('click', closeViewer);
-    $('#viewerModal')?.addEventListener('click', (e)=>{ if(e.target.matches('[data-close]')) closeViewer(); });
-    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && $('#viewerModal').classList.contains('is-open')) closeViewer(); });
+
+    viewerEditStars.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = Number(btn.dataset.val);
+        if (v >= 1 && v <= 5) {
+          if (viewerEditRatingInput) viewerEditRatingInput.value = String(v);
+          paintViewerEditStars(v);
+        }
+      });
+      btn.addEventListener('keydown', (e) => {
+        const cur = Number(viewerEditRatingInput?.value || 5);
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          const v = Math.max(1, cur - 1);
+          if (viewerEditRatingInput) viewerEditRatingInput.value = String(v);
+          paintViewerEditStars(v);
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const v = Math.min(5, cur + 1);
+          if (viewerEditRatingInput) viewerEditRatingInput.value = String(v);
+          paintViewerEditStars(v);
+        }
+      });
+    });
+
+    Array.from(viewerEditVideoSourceRadios).forEach(radio => {
+      radio.addEventListener('change', () => {
+        updateViewerEditVideoSourceUI(radio.value);
+        if (radio.value === 'keep' && currentViewerItem) {
+          showViewerEditPreview(currentViewerItem.video_type || detectVideoType(currentViewerItem.video_url), currentViewerItem.video_url);
+        } else if (radio.value === 'external') {
+          const previewType = detectVideoType(viewerEditVideoUrlInput?.value, 'url');
+          showViewerEditPreview(previewType, viewerEditVideoUrlInput?.value);
+        } else {
+          resetViewerEditPreview();
+        }
+      });
+    });
+
+    if (viewerEditVideoFile) {
+      viewerEditVideoFile.addEventListener('change', () => {
+        if (viewerEditVideoFileName) {
+          viewerEditVideoFileName.textContent = viewerEditVideoFile.files[0] ? viewerEditVideoFile.files[0].name : '未选择文件';
+        }
+      });
+    }
+
+    if (viewerEditVideoUrlInput) {
+      viewerEditVideoUrlInput.addEventListener('input', () => {
+        if (getViewerEditVideoSource() === 'external') {
+          const value = viewerEditVideoUrlInput.value.trim();
+          const type = detectVideoType(value, 'url');
+          showViewerEditPreview(type, value);
+        }
+      });
+    }
+
+    if (viewerEditBtn) viewerEditBtn.addEventListener('click', () => enterEditMode());
+    if (viewerEditCancelBtn) viewerEditCancelBtn.addEventListener('click', () => {
+      exitEditMode();
+      if (currentViewerItem) renderViewerView(currentViewerItem);
+    });
+    if (viewerEditSubmitBtn) viewerEditSubmitBtn.addEventListener('click', submitViewerEdit);
+    if (viewerCloseBtn) viewerCloseBtn.addEventListener('click', closeViewer);
+    if (viewerClose2Btn) viewerClose2Btn.addEventListener('click', closeViewer);
+    viewerModalEl?.addEventListener('click', (e)=>{ if(e.target.matches('[data-close]')) closeViewer(); });
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && viewerModalEl?.classList.contains('is-open')) closeViewer(); });
+
 
     async function load(){
       skeleton();
