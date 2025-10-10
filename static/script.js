@@ -33,6 +33,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentRemark = '';
     let showFavoritesOnly = false;  // 显示收藏的标志
     let showScoreCodeOnly = false;  // 仅显示曲谱码的标志
+    const HISTORY_CHUNK_SIZE = 40;
+    const HISTORY_RENDER_LIMIT = 400;
+    let historyDataCache = [];
+    let historyRenderLimit = HISTORY_RENDER_LIMIT;
+    let historyRenderToken = 0;
+    let historyRenderRaf = null;
+    let historyFetchController = null;
     
     // 创建统计信息显示元素
     const statsDiv = document.createElement('div');
@@ -52,14 +59,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('filterBtn').addEventListener('click', function() {
         showFavoritesOnly = !showFavoritesOnly;
         this.textContent = showFavoritesOnly ? '显示所有' : '仅显示收藏';
-        refreshHistory();
+        historyRenderLimit = HISTORY_RENDER_LIMIT;
+        renderHistoryFromCache({ preserveScroll: true });
     });
 
     // 曲谱码过滤按钮点击事件
     document.getElementById('scoreCodeFilterBtn').addEventListener('click', function() {
         showScoreCodeOnly = !showScoreCodeOnly;
         this.textContent = showScoreCodeOnly ? '显示完整信息' : '仅显示曲谱码';
-        refreshHistory();
+        historyRenderLimit = HISTORY_RENDER_LIMIT;
+        renderHistoryFromCache({ preserveScroll: true });
     });
 
     // 更新统计信息
@@ -154,7 +163,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentRemark = data.remark || '';
                 updateRemarkButtonState();
                 closeRemarkModal();
-                refreshHistory();
+                const updated = updateHistoryRemark(currentScoreCode, currentRemark);
+                if (!updated) {
+                    refreshHistory();
+                }
             } else {
                 remarkMsg.textContent = data.error || '保存备注失败';
             }
@@ -220,29 +232,32 @@ document.addEventListener('DOMContentLoaded', () => {
             completionInput.value = data.completion;
             messageDisplay.textContent = data.message;
             saveBtn.disabled = true;
-            // 刷新历史记录和统计信息
-            refreshHistory();
+            ensureRecordAtTop(data.score_code, { completion: data.completion });
+            renderHistoryFromCache();
             updateStats();
         }
     });
 
     // 保存按钮点击事件
-    saveBtn.addEventListener('click', function() {
+    saveBtn.addEventListener('click', async function() {
         const completion = parseInt(completionInput.value);
         if (completion >= 0 && completion <= 100 && currentScoreCode) {
-            fetch('/api/scores/save', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    score_code: currentScoreCode,
-                    completion: completion
-                })
-            }).then(() => {
-                // 保存成功后刷新历史记录
-                refreshHistory();
-            });
+            try {
+                await fetch('/api/scores/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        score_code: currentScoreCode,
+                        completion: completion
+                    })
+                });
+                ensureRecordAtTop(currentScoreCode, { completion });
+                renderHistoryFromCache();
+            } catch (error) {
+                console.error('保存完成率失败:', error);
+            }
         }
     });
 
@@ -260,24 +275,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 自动保存函数
-    const autoSave = debounce(function() {
+    const autoSave = debounce(async function() {
         const value = parseInt(completionInput.value);
         if (!isNaN(value) && value >= 0 && value <= 100 && currentScoreCode) {
-            fetch('/api/scores/save', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    score_code: currentScoreCode,
-                    completion: value
-                })
-            }).then(() => {
-                // 保存成功后更新显示
+            try {
+                await fetch('/api/scores/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        score_code: currentScoreCode,
+                        completion: value
+                    })
+                });
                 document.getElementById('currentCompletion').textContent = value + '%';
-                // 刷新历史记录
-                refreshHistory();
-            });
+                ensureRecordAtTop(currentScoreCode, { completion: value });
+                renderHistoryFromCache();
+            } catch (error) {
+                console.error('自动保存失败:', error);
+            }
         }
     }, 1000);
 
@@ -308,7 +325,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             updateRemarkButtonState();
         }
-        refreshHistory();
+        const updated = updateHistoryRemark(data.score_code, data.remark || '');
+        if (!updated) {
+            refreshHistory();
+        }
     });
 
     // 收藏按钮点击事件
@@ -338,40 +358,236 @@ document.addEventListener('DOMContentLoaded', () => {
                 const result = await response.json();
                 // 立即更新按钮状态
                 favoriteBtn.textContent = result.is_favorite ? '★' : '☆';
-                // 刷新历史记录
-                refreshHistory();
+                const existed = updateHistoryFavorite(currentScoreCode, result.is_favorite);
+                if (!existed) {
+                    const parsed = parseInt(completionInput.value, 10);
+                    const completionValue = Number.isInteger(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
+                    ensureRecordAtTop(currentScoreCode, {
+                        completion: completionValue,
+                        is_favorite: result.is_favorite,
+                        remark: currentRemark
+                    });
+                    renderHistoryFromCache();
+                }
             }
         }
     });
 
-    // 添加历史记录
-    function addToHistory(data) {
-        const item = document.createElement('div');
-        item.className = 'history-item';
-        item.id = `history-${data.score_code}`;
-        const now = new Date().toLocaleString();
-        const remarkLine = data.remark ? `<div class="history-remark">${escapeHtml(data.remark)}</div>` : '';
-        item.innerHTML = `
-            <div class="history-content">
-                <div>曲谱码：<span class="score-code">${data.score_code}</span></div>
-                <div>完成率：<span class="completion">${data.completion}%</span></div>
-                ${remarkLine}
-                <div class="timestamp">${now}</div>
-            </div>
-            <span class="favorite-btn">${data.is_favorite ? '★' : '☆'}</span>
-        `;
-        historyList.insertBefore(item, historyList.firstChild);
+    function updateCachedScore(scoreCode, changes) {
+        if (!scoreCode || !historyDataCache.length) return false;
+        for (let i = 0; i < historyDataCache.length; i += 1) {
+            if (historyDataCache[i].score_code === scoreCode) {
+                const mutation = typeof changes === 'function' ? changes(historyDataCache[i]) : changes;
+                if (mutation && typeof mutation === 'object') {
+                    Object.assign(historyDataCache[i], mutation);
+                }
+                return true;
+            }
+        }
+        return false;
     }
 
-    // 更新历史记录中的收藏状态
+    function ensureRecordAtTop(scoreCode, extra = {}) {
+        if (!scoreCode) return false;
+        const index = historyDataCache.findIndex(item => item.score_code === scoreCode);
+        const nowIso = new Date().toISOString();
+        const payload = { created_at: nowIso, ...extra };
+        if (index >= 0) {
+            const record = { ...historyDataCache[index], ...payload };
+            historyDataCache.splice(index, 1);
+            historyDataCache.unshift(record);
+            return true;
+        }
+        historyDataCache.unshift({
+            score_code: scoreCode,
+            completion: extra.completion ?? null,
+            is_favorite: extra.is_favorite ?? false,
+            remark: extra.remark ?? '',
+            created_at: payload.created_at,
+            has_review: extra.has_review ?? false
+        });
+        return false;
+    }
+
+    function buildHistoryItem(score) {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.dataset.scoreCode = score.score_code;
+        item.id = `history-${score.score_code}`;
+        const favoriteIcon = score.is_favorite ? '★' : '☆';
+
+        if (showScoreCodeOnly) {
+            item.innerHTML = `
+                <div class="history-content">
+                    <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
+                </div>
+                <span class="favorite-btn">${favoriteIcon}</span>
+            `;
+            return item;
+        }
+
+        const remarkSection = score.remark
+            ? `<div class="history-remark">${escapeHtml(score.remark)}</div>`
+            : '';
+        const completionText = (typeof score.completion === 'number' && !Number.isNaN(score.completion))
+            ? `${score.completion}%`
+            : '-';
+        const dateText = score.created_at ? new Date(score.created_at).toLocaleString() : '';
+
+        item.innerHTML = `
+            <div class="history-content">
+                <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
+                <div>完成率：<span class="completion">${completionText}</span></div>
+                ${remarkSection}
+                <div class="timestamp">${dateText}</div>
+            </div>
+            <span class="favorite-btn">${favoriteIcon}</span>
+        `;
+        return item;
+    }
+
+    function renderHistoryFromCache(options = {}) {
+        const { preserveScroll = false } = options;
+        if (!historyList) return;
+        if (historyRenderRaf) {
+            cancelAnimationFrame(historyRenderRaf);
+            historyRenderRaf = null;
+        }
+        const previousScrollTop = preserveScroll ? historyList.scrollTop : 0;
+        const filtered = historyDataCache.filter(score => !showFavoritesOnly || score.is_favorite);
+        historyList.setAttribute('aria-busy', 'true');
+
+        if (!filtered.length) {
+            historyList.innerHTML = '<div class="history-empty">暂无记录</div>';
+            historyList.removeAttribute('aria-busy');
+            return;
+        }
+
+        const finiteLimit = Number.isFinite(historyRenderLimit) ? historyRenderLimit : filtered.length;
+        const limited = filtered.slice(0, finiteLimit);
+        const hasMore = Number.isFinite(historyRenderLimit) && filtered.length > historyRenderLimit;
+
+        const token = ++historyRenderToken;
+        let index = 0;
+        historyList.innerHTML = '';
+        const chunkSize = limited.length > 400 ? 80 : HISTORY_CHUNK_SIZE;
+
+        const renderChunk = () => {
+            if (token !== historyRenderToken) return;
+            const fragment = document.createDocumentFragment();
+            const limit = Math.min(index + chunkSize, limited.length);
+            for (let i = index; i < limit; i += 1) {
+                fragment.appendChild(buildHistoryItem(limited[i]));
+            }
+            historyList.appendChild(fragment);
+            index = limit;
+            if (index < limited.length) {
+                historyRenderRaf = requestAnimationFrame(renderChunk);
+            } else {
+                historyRenderRaf = null;
+                if (preserveScroll) {
+                    historyList.scrollTop = previousScrollTop;
+                }
+                if (hasMore) {
+                    appendHistoryOverflow(filtered.length);
+                }
+                historyList.removeAttribute('aria-busy');
+            }
+        };
+
+        historyRenderRaf = requestAnimationFrame(renderChunk);
+    }
+
+    async function refreshHistory() {
+        if (!historyList) return;
+        if (historyFetchController) {
+            historyFetchController.abort();
+        }
+        historyFetchController = new AbortController();
+        const { signal } = historyFetchController;
+        try {
+            const response = await fetch('/api/scores', { signal });
+            const scores = await response.json();
+            if (signal.aborted) return;
+            historyDataCache = Array.isArray(scores) ? scores : [];
+            historyRenderLimit = HISTORY_RENDER_LIMIT;
+            renderHistoryFromCache();
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return;
+            }
+            console.error('加载历史记录失败:', error);
+            historyList.innerHTML = '<div class="history-error">加载历史记录失败</div>';
+            historyList.removeAttribute('aria-busy');
+        }
+    }
+
+    function appendHistoryOverflow(total) {
+        const container = document.createElement('div');
+        container.className = 'history-load-more';
+        const info = document.createElement('div');
+        info.className = 'history-load-more__info';
+        const limitText = Number.isFinite(historyRenderLimit) ? historyRenderLimit : total;
+        info.textContent = `已显示最新 ${limitText} 条 / 共 ${total} 条`;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'history-load-more__btn';
+        btn.textContent = '加载全部';
+        btn.addEventListener('click', () => {
+            historyRenderLimit = Infinity;
+            renderHistoryFromCache();
+        }, { once: true });
+        container.appendChild(info);
+        container.appendChild(btn);
+        historyList.appendChild(container);
+    }
+
     function updateHistoryFavorite(scoreCode, isFavorite) {
+        const found = updateCachedScore(scoreCode, { is_favorite: isFavorite });
         const item = document.getElementById(`history-${scoreCode}`);
         if (item) {
             const btn = item.querySelector('.favorite-btn');
             if (btn) {
                 btn.textContent = isFavorite ? '★' : '☆';
             }
+            if (showFavoritesOnly && !isFavorite) {
+                renderHistoryFromCache({ preserveScroll: true });
+            }
+        } else if (found && showFavoritesOnly) {
+            if (isFavorite) {
+                renderHistoryFromCache();
+            } else {
+                renderHistoryFromCache({ preserveScroll: true });
+            }
         }
+        return found;
+    }
+
+    function updateHistoryRemark(scoreCode, remark) {
+        if (!scoreCode) return false;
+        const found = updateCachedScore(scoreCode, { remark });
+        if (showScoreCodeOnly) return found;
+        const item = document.getElementById(`history-${scoreCode}`);
+        if (!item) {
+            return found;
+        }
+        let remarkNode = item.querySelector('.history-remark');
+        if (remark) {
+            if (!remarkNode) {
+                remarkNode = document.createElement('div');
+                remarkNode.className = 'history-remark';
+                const contentContainer = item.querySelector('.history-content');
+                if (contentContainer) {
+                    contentContainer.insertBefore(remarkNode, contentContainer.querySelector('.timestamp'));
+                }
+            }
+            if (remarkNode) {
+                remarkNode.textContent = remark;
+            }
+        } else if (remarkNode) {
+            remarkNode.remove();
+        }
+        return found;
     }
 
     // 切换收藏状态
@@ -380,47 +596,6 @@ document.addEventListener('DOMContentLoaded', () => {
             method: 'POST'
         });
     };
-
-    // 刷新历史记录
-    function refreshHistory() {
-        fetch('/api/scores')
-            .then(response => response.json())
-            .then(scores => {
-                // 清空现有历史记录
-                historyList.innerHTML = '';
-                // 过滤并添加记录
-                scores
-                    .filter(score => !showFavoritesOnly || score.is_favorite)
-                    .forEach(score => {
-                        const item = document.createElement('div');
-                        item.className = 'history-item';
-                        item.id = `history-${score.score_code}`;
-                        const date = new Date(score.created_at).toLocaleString();
-                        const remarkSection = score.remark ? `<div class="history-remark">${escapeHtml(score.remark)}</div>` : '';
-                        const completionText = score.completion !== null && score.completion !== undefined ? `${score.completion}%` : '-';
-                        
-                        if (showScoreCodeOnly) {
-                            item.innerHTML = `
-                                <div class="history-content">
-                                    <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
-                                </div>
-                                <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>
-                            `;
-                        } else {
-                            item.innerHTML = `
-                                <div class="history-content">
-                                    <div>曲谱码：<span class="score-code">${score.score_code}</span></div>
-                                    <div>完成率：<span class="completion">${completionText}</span></div>
-                                    ${remarkSection}
-                                    <div class="timestamp">${date}</div>
-                                </div>
-                                <span class="favorite-btn">${score.is_favorite ? '★' : '☆'}</span>
-                            `;
-                        }
-                        historyList.appendChild(item);
-                    });
-            });
-    }
 
     // 加载历史记录
     refreshHistory();

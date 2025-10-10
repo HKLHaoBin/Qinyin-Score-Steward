@@ -432,6 +432,44 @@ h1 {
     white-space: pre-wrap;
     word-break: break-word;
 }
+.history-load-more {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 10px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+    flex-wrap: wrap;
+}
+.history-load-more__info {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+.history-load-more__btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--accent-color);
+    background: var(--accent-color);
+    color: #fff;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+.history-load-more__btn:hover,
+.history-load-more__btn:focus {
+    background-color: var(--accent-hover);
+    transform: translateY(-1px);
+    outline: none;
+}
+.history-empty,
+.history-error {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+.history-error {
+    color: var(--error-text);
+}
 
 .stats-info {
     margin: 10px 0;
