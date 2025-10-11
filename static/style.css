@@ -310,11 +310,20 @@ h1 {
     background-color: #6c757d;
     cursor: not-allowed;
 }
+.current-remark {
+    margin: 8px 0;
+    font-size: 1em;
+    color: var(--text-muted);
+    word-break: break-word;
+    white-space: pre-wrap;
+}
 .message {
     color: #28a745;
     font-weight: bold;
     margin: 10px 0;
-    min-height: 1.5em;
+}
+.message:empty {
+    display: none;
 }
 .favorite-btn {
     font-size: 1.5em;

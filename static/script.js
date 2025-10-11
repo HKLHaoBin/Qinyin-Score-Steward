@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveBtn = document.getElementById('saveBtn');
     const currentScoreCodeDisplay = document.getElementById('currentScoreCode');
     const statusBox = document.querySelector('.status-box');
+    const currentRemarkRow = document.getElementById('currentRemarkRow');
+    const currentRemarkText = document.getElementById('currentRemarkText');
     let currentScoreCode = null;
     let currentRemark = '';
     let showFavoritesOnly = false;  // 显示收藏的标志
@@ -89,6 +91,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始加载统计信息
     updateStats();
     updateRemarkButtonState();
+    renderCurrentRemark(currentRemark);
+
+    function renderCurrentRemark(remarkValue) {
+        if (!currentRemarkRow || !currentRemarkText) {
+            return;
+        }
+        const trimmed = (remarkValue || '').toString().trim();
+        if (trimmed) {
+            currentRemarkText.textContent = trimmed;
+            currentRemarkRow.style.display = '';
+            currentRemarkRow.setAttribute('aria-hidden', 'false');
+        } else {
+            currentRemarkText.textContent = '';
+            currentRemarkRow.style.display = 'none';
+            currentRemarkRow.setAttribute('aria-hidden', 'true');
+        }
+    }
 
     function updateRemarkButtonState() {
         if (!remarkBtn) {
@@ -116,6 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     remarkTextarea.value = data.remark;
                 }
                 updateRemarkButtonState();
+                renderCurrentRemark(currentRemark);
             }
         } catch (error) {
             console.warn('备注加载失败', error);
@@ -162,6 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.success) {
                 currentRemark = data.remark || '';
                 updateRemarkButtonState();
+                renderCurrentRemark(currentRemark);
                 closeRemarkModal();
                 const updated = updateHistoryRemark(currentScoreCode, currentRemark);
                 if (!updated) {
@@ -217,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
             favoriteBtn.style.display = 'inline-block';
             currentRemark = data.remark || '';
             updateRemarkButtonState();
+            renderCurrentRemark(currentRemark);
             if (data.exists) {
                 statusBox.className = 'status-box exists';
                 const completionValue = Number.isInteger(data.completion) ? data.completion : null;
@@ -326,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 remarkTextarea.value = currentRemark;
             }
             updateRemarkButtonState();
+            renderCurrentRemark(currentRemark);
         }
         const updated = updateHistoryRemark(data.score_code, data.remark || '');
         if (!updated) {
