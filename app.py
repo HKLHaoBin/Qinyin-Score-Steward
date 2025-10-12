@@ -1730,7 +1730,7 @@ def list_liked_reviews():
         conn_r.close()
 
         # 2) 取这些谱子的最新完成率 & 收藏态（scores.db）
-        codes = [r[0] for r in rows]
+        codes = [r[1] for r in rows]  # r[1] 是 score_code
         completion_map = {}
         favorite_map = {}
         remark_map = {}

@@ -37,6 +37,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const remarkCloseBtn = document.getElementById('remarkCloseBtn');
     const remarkSummary = document.getElementById('remarkSummary');
     const remarkMsg = document.getElementById('remarkMsg');
+    const reviewModalInstance = new ReviewModal();
+    if (!reviewModalInstance.isReady()) {
+        console.warn('ReviewModal: 批量查询页弹窗初始化失败');
+    }
     
     let isChromeInitialized = false; // 初始状态为未初始化
     let excludeList = [];
@@ -526,17 +530,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 actionWrap.appendChild(remarkBtnEl);
 
-                if (result.has_review) {
-                    const heartBtn = document.createElement('button');
-                    heartBtn.className = 'heart-btn';
-                    heartBtn.dataset.code = result.score_code;
-                    heartBtn.title = '查看评价';
-                    heartBtn.textContent = '❤️';
-                    heartBtn.addEventListener('click', async () => {
-                        await openReviewModal('view', result.score_code);
+                const heartBtn = document.createElement('button');
+                heartBtn.className = 'heart-btn';
+                heartBtn.dataset.code = result.score_code;
+                let hasReview = !!result.has_review;
+                heartBtn.title = hasReview ? '查看评价' : '添加评价';
+                heartBtn.textContent = hasReview ? '❤️' : '🩶';
+                heartBtn.addEventListener('click', async () => {
+                    if (!reviewModalInstance.isReady()) {
+                        showToast('评价弹窗未初始化');
+                        return;
+                    }
+                    const preferredMode = hasReview ? 'view' : 'create';
+                    const { mode } = await reviewModalInstance.open({
+                        scoreCode: result.score_code,
+                        mode: preferredMode,
+                        onSaved: () => {
+                            hasReview = true;
+                            result.has_review = true;
+                            heartBtn.textContent = '❤️';
+                            heartBtn.title = '查看评价';
+                            loadData();
+                        }
                     });
-                    actionWrap.appendChild(heartBtn);
-                }
+                    if (mode === 'view') {
+                        hasReview = true;
+                        heartBtn.textContent = '❤️';
+                        heartBtn.title = '查看评价';
+                    } else if (preferredMode === 'view' && mode === 'create') {
+                        hasReview = false;
+                        result.has_review = false;
+                        heartBtn.textContent = '🩶';
+                        heartBtn.title = '添加评价';
+                    }
+                });
+                actionWrap.appendChild(heartBtn);
 
                 actionsCell.appendChild(actionWrap);
                 row.appendChild(actionsCell);
@@ -659,20 +687,33 @@ document.addEventListener('DOMContentLoaded', () => {
               完成率：<span class="completion-badge" style="cursor:pointer;">${completionText}</span>
             </div>
             <div class="actions-row" style="margin-top:8px; display:flex; gap:8px;">
-              <button class="like-btn">${hasReview ? '查看评价 ❤️' : '❤️'}</button>
+              <button class="like-btn">${hasReview ? '❤️' : '🩶'}</button>
               <button class="remark-btn random-remark-btn ${hasRemark ? 'has-remark' : ''}">备注</button>
             </div>
             <div class="remark-text">${remarkDisplay}</div>
           </div>
         `;
 
-        randomCopyInfo.querySelector('.like-btn').onclick = async function () {
-          if (hasReview) {
-            await openReviewModal('view', scoreObj.score_code);
-          } else {
-            await openReviewModal('create', scoreObj.score_code);
-            // 保存成功后刷新本卡片与表格
-            // openReviewModal 内部会在成功时触发 refreshResults()
+        randomCopyInfo.querySelector('.like-btn').onclick = async () => {
+          if (!reviewModalInstance.isReady()) {
+            showToast('评价弹窗未初始化');
+            return;
+          }
+          const preferredMode = hasReview ? 'view' : 'create';
+          const { mode } = await reviewModalInstance.open({
+            scoreCode: scoreObj.score_code,
+            mode: preferredMode,
+            onSaved: () => {
+              scoreObj.has_review = true;
+              loadData();
+              updateRandomCopyCard(scoreObj);
+            }
+          });
+          if (mode === 'view') {
+            scoreObj.has_review = true;
+          } else if (preferredMode === 'view' && mode === 'create') {
+            scoreObj.has_review = false;
+            updateRandomCopyCard(scoreObj);
           }
         };
         randomCopyInfo.querySelector('.random-remark-btn').onclick = () => {
@@ -815,166 +856,6 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshResults();
 });
 
-// —— 评价弹窗（批量页复用） ——
-const reviewModal = document.getElementById('reviewModal');
-const reviewCloseBtn = document.getElementById('reviewCloseBtn');
-const reviewCancelBtn = document.getElementById('reviewCancelBtn');
-const reviewSubmitBtn = document.getElementById('reviewSubmitBtn');
-const reviewMsg = document.getElementById('reviewMsg');
-const starGroup = document.getElementById('starGroup');
-const ratingInput = document.getElementById('reviewRating');
-const commentInput = document.getElementById('reviewComment');
-const videoInput = document.getElementById('reviewVideo');
-const videoFileName = document.getElementById('videoFileName');
-const fileRow = document.getElementById('reviewFileRow');
-const prevRow = document.getElementById('reviewPreviewRow');
-const prevVideo = document.getElementById('reviewVideoPreview');
-const titleEl = document.getElementById('reviewTitle');
-
-// 星星渲染
-function paintStars(n) {
-  [...starGroup.querySelectorAll('.qyj-star')].forEach(btn => {
-    const v = Number(btn.dataset.val);
-    const active = v <= n;
-    btn.textContent = active ? '★' : '☆';
-    btn.setAttribute('aria-checked', String(v === n));
-    btn.classList.toggle('is-active', active);
-  });
-}
-paintStars(Number(ratingInput.value || 5));
-
-// 星星交互
-starGroup.addEventListener('click', (e) => {
-  const v = Number(e.target?.dataset?.val || 0);
-  if (v >= 1 && v <= 5) {
-    ratingInput.value = String(v);
-    paintStars(v);
-  }
-});
-
-// 文件名显示
-videoInput?.addEventListener('change', () => {
-  videoFileName.textContent = videoInput.files[0] ? videoInput.files[0].name : '未选择文件';
-});
-
-// 打开弹窗
-async function openReviewModal(mode, scoreCode) {
-  if (reviewMsg) reviewMsg.textContent = '';
-  titleEl.textContent = mode === 'view' ? '查看评价' : '添加评价';
-
-  // 控制显示/隐藏
-  fileRow.style.display = mode === 'view' ? 'none' : 'block';
-  prevRow.style.display = mode === 'view' ? 'block' : 'none';
-
-  if (mode === 'view') {
-    // 查看模式：获取数据并只读展示
-    try {
-      const resp = await fetch(`/api/reviews/${scoreCode}`);
-      const data = await resp.json();
-      if (!data.success || !data.has_review) {
-        reviewMsg.textContent = '未找到评价数据';
-        return;
-      }
-
-      // 设置只读状态
-      ratingInput.value = data.rating;
-      paintStars(data.rating);
-      starGroup.setAttribute('aria-disabled', 'true');
-
-      commentInput.value = data.comment || '';
-      commentInput.setAttribute('readonly', 'readonly');
-
-      // 显示视频预览
-      if (data.video_url) {
-        prevVideo.src = data.video_url;
-      }
-
-      // 隐藏提交按钮
-      reviewSubmitBtn.style.display = 'none';
-    } catch (e) {
-      reviewMsg.textContent = '加载失败：' + e.message;
-      return;
-    }
-  } else {
-    // 创建模式：清空并可编辑
-    ratingInput.value = '5';
-    paintStars(5);
-    starGroup.removeAttribute('aria-disabled');
-
-    commentInput.value = '';
-    commentInput.removeAttribute('readonly');
-
-    videoInput.value = '';
-    videoFileName.textContent = '未选择文件';
-
-    // 显示提交按钮并设置数据
-    reviewSubmitBtn.style.display = 'block';
-    reviewSubmitBtn.dataset.code = scoreCode;
-  }
-
-  reviewModal.classList.add('is-open');
-  reviewModal.setAttribute('aria-hidden', 'false');
-}
-
-// 关闭弹窗
-function closeReviewModal() {
-  reviewModal.classList.remove('is-open');
-  reviewModal.setAttribute('aria-hidden', 'true');
-}
-
-reviewCancelBtn?.addEventListener('click', closeReviewModal);
-reviewCloseBtn?.addEventListener('click', closeReviewModal);
-reviewModal?.addEventListener('click', (e) => {
-  if (e.target.matches('[data-close-modal]')) closeReviewModal();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && reviewModal.classList.contains('is-open')) closeReviewModal();
-});
-
-// 提交新增评价（批量页：后端当前要求"评语+视频"为必填）
-reviewSubmitBtn?.addEventListener('click', async () => {
-  const code = reviewSubmitBtn.dataset.code;
-  const rating = Number(ratingInput.value || 5);
-  if (!(rating >= 1 && rating <= 5)) {
-    reviewMsg.textContent = '评分必须是 1-5';
-    return;
-  }
-
-  const comment = commentInput.value.trim();
-  if (!comment) {
-    reviewMsg.textContent = '评语不能为空';
-    return;
-  }
-
-  if (!videoInput.files[0]) {
-    reviewMsg.textContent = '请选择视频文件';
-    return;
-  }
-
-  const fd = new FormData();
-  fd.append('score_code', code);
-  fd.append('rating', String(rating));
-  fd.append('comment', comment);
-  fd.append('video', videoInput.files[0]);
-
-  reviewSubmitBtn.disabled = true;
-  reviewMsg.textContent = '正在保存...';
-
-  try {
-    const resp = await fetch('/api/reviews', { method: 'POST', body: fd });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error || '保存失败');
-
-    reviewMsg.textContent = '保存成功！';
-    // 刷新数据（更新红心状态）
-    loadData();
-    setTimeout(closeReviewModal, 500);
-  } catch (e) {
-    reviewMsg.textContent = '保存失败：' + e.message;
-  } finally {
-    reviewSubmitBtn.disabled = false;
-  }
-});
 
 document.getElementById('createPoolFromBatchBtn').onclick = function() {
         // 获取当前筛选条件
