@@ -170,14 +170,25 @@ document.addEventListener('DOMContentLoaded', () => {
             codes,
             initialRemark,
             source: 'batch',
-            onSaved: (newRemark) => {
-                let updated = false;
-                codes.forEach(code => {
-                    if (updateRemarkInResults(code, newRemark)) {
-                        updated = true;
-                    }
-                });
-                if (updated) {
+            onSaved: (result) => {
+                const updates = Array.isArray(result?.updates)
+                    ? result.updates
+                    : [];
+                let changed = false;
+                if (updates.length) {
+                    updates.forEach(item => {
+                        if (item && updateRemarkInResults(item.score_code, item.remark)) {
+                            changed = true;
+                        }
+                    });
+                } else if (typeof result?.remark === 'string') {
+                    codes.forEach(code => {
+                        if (updateRemarkInResults(code, result.remark)) {
+                            changed = true;
+                        }
+                    });
+                }
+                if (changed) {
                     filterAndDisplayResults();
                 }
             }
@@ -317,7 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (remarkSummary) {
             let summaryText = '';
             if (mode === 'batch') {
-                summaryText = `将为 ${pickedCodes.length} 个谱子更新备注（当前筛选结果）。保存后会覆盖这些谱子的备注。`;
+                summaryText = `将为 ${pickedCodes.length} 个谱子补充备注（当前筛选结果）。已包含目标信息的备注不会被覆盖。`;
             } else if (scoreCode) {
                 summaryText = `当前曲谱：${scoreCode}`;
             }
@@ -354,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!remarkModal || !remarkTextarea || !remarkSaveBtn) {
             return;
         }
-        const remarkValue = remarkTextarea.value || '';
+        const remarkValue = (remarkTextarea.value || '').trim();
         remarkSaveBtn.disabled = true;
         remarkSaveBtn.textContent = '保存中...';
         remarkMsg.textContent = '';
@@ -373,20 +384,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     const data = await resp.json();
                     if (data.success) {
-                        let updated = false;
-                        remarkModalState.codes.forEach(code => {
-                            if (updateRemarkInResults(code, remarkValue)) {
-                                updated = true;
+                        const updates = Array.isArray(data.updates) ? data.updates : [];
+                        if (typeof remarkModalState.onSaved === 'function') {
+                            remarkModalState.onSaved(data);
+                        } else if (updates.length) {
+                            let changed = false;
+                            updates.forEach(item => {
+                                if (item && updateRemarkInResults(item.score_code, item.remark)) {
+                                    changed = true;
+                                }
+                            });
+                            if (changed) {
+                                filterAndDisplayResults();
                             }
-                        });
-                        if (updated) {
+                        } else {
+                            // 无变化时刷新以确保状态一致
                             filterAndDisplayResults();
                         }
-                        if (typeof remarkModalState.onSaved === 'function') {
-                            remarkModalState.onSaved(remarkValue);
-                        }
+                        const updatedCount = data.updated_count ?? updates.length;
+                        const skippedCount = data.unchanged_count ?? (Array.isArray(data.skipped) ? data.skipped.length : 0);
+                        const summary = `批量备注已更新：更新 ${updatedCount} 条，保留 ${skippedCount} 条`;
                         closeRemarkModal();
-                        showToast('批量备注已更新');
+                        showToast(summary);
                     } else {
                         remarkMsg.textContent = data.error || '批量备注失败';
                     }
@@ -401,8 +420,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.success) {
                     const savedRemark = data.remark != null ? data.remark : remarkValue;
                     if (updateRemarkInResults(remarkModalState.scoreCode, savedRemark)) {
-                        filterAndDisplayResults();
-                    }
+                            filterAndDisplayResults();
+                        }
                     if (typeof remarkModalState.onSaved === 'function') {
                         remarkModalState.onSaved(savedRemark);
                     }

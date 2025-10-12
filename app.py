@@ -20,6 +20,7 @@ import ffmpeg
 from werkzeug.exceptions import RequestEntityTooLarge
 from urllib.parse import urlparse
 import html
+from collections import Counter
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
@@ -434,6 +435,56 @@ def is_valid_score_code(text):
     """检查是否是有效的曲谱码（纯数字且长度至少为5位）"""
     return bool(re.match(r'^\d{5,}$', text))
 
+
+def _normalize_chars_for_compare(text: str):
+    return [ch for ch in text if not ch.isspace()]
+
+
+def remark_contains_all_chars(existing: str, target: str) -> bool:
+    """检查 existing 是否已经包含 target 中的全部非空白字符（可打乱顺序）"""
+    if not target:
+        return True
+    existing_counter = Counter(_normalize_chars_for_compare(existing or ''))
+    target_counter = Counter(_normalize_chars_for_compare(target or ''))
+    for ch, required in target_counter.items():
+        if existing_counter.get(ch, 0) < required:
+            return False
+    return True
+
+
+def merge_remark(existing: str, target: str) -> str:
+    """
+    根据批量备注规则合并备注：
+      - 目标备注为空时不改动；
+      - 原备注为空时写入目标备注；
+      - 若原备注已包含目标备注（或等价字符），保持原备注；
+      - 若原备注字符集中已包含目标备注所有字符，同样保持；
+      - 若原备注是目标备注的一部分，则补全为目标备注；
+      - 其他情况在原备注后追加目标备注。
+    """
+    existing = (existing or '').strip()
+    target = (target or '').strip()
+    if not target:
+        return existing
+    if not existing:
+        return target
+
+    normalized_exist = existing.replace(':', '：')
+    normalized_target = target.replace(':', '：')
+    if normalized_target in normalized_exist:
+        return existing
+
+    if remark_contains_all_chars(existing, target):
+        return existing
+
+    if existing.replace('：', ':') in target.replace('：', ':'):
+        return target
+
+    if target in existing:
+        return existing
+
+    return f"{existing} {target}".strip()
+
 def is_valid_completion(text):
     """检查是否是有效的完成率（0-100的整数）"""
     try:
@@ -744,35 +795,52 @@ def batch_update_remarks():
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
 
-        placeholders = ','.join(['?'] * len(unique_codes))
-        c.execute(f'SELECT DISTINCT score_code FROM scores WHERE score_code IN ({placeholders})', unique_codes)
-        existing_codes = {row[0] for row in c.fetchall()}
+        updates = []
+        skipped = []
 
-        missing_codes = [code for code in unique_codes if code not in existing_codes]
+        for code in unique_codes:
+            c.execute('SELECT remark FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (code,))
+            row = c.fetchone()
+            existing_remark = row[0] if row else ''
+            merged = merge_remark(existing_remark or '', remark)
 
-        if existing_codes:
-            existing_list = list(existing_codes)
-            placeholders = ','.join(['?'] * len(existing_list))
-            c.execute(f'UPDATE scores SET remark = ?, created_at = CURRENT_TIMESTAMP WHERE score_code IN ({placeholders})',
-                      [remark, *existing_list])
-
-        if missing_codes:
-            payloads = [(code, None, remark) for code in missing_codes]
-            c.executemany('''
-                INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, remark, created_at)
-                VALUES (?, ?, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
-            ''', payloads)
+            if row:
+                original = (existing_remark or '').strip()
+                if merged != original:
+                    c.execute(
+                        'UPDATE scores SET remark = ?, created_at = CURRENT_TIMESTAMP WHERE score_code = ?',
+                        (merged, code)
+                    )
+                    updates.append({'score_code': code, 'remark': merged})
+                else:
+                    skipped.append({'score_code': code, 'remark': original})
+            else:
+                if merged:
+                    c.execute('''
+                        INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, remark, created_at)
+                        VALUES (?, ?, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
+                    ''', (code, None, merged))
+                    updates.append({'score_code': code, 'remark': merged})
+                else:
+                    skipped.append({'score_code': code, 'remark': ''})
 
         conn.commit()
         conn.close()
 
-        for code in unique_codes:
+        for item in updates:
             socketio.emit('remark_update', {
-                'score_code': code,
-                'remark': remark
+                'score_code': item['score_code'],
+                'remark': item['remark']
             })
 
-        return jsonify({'success': True, 'remark': remark, 'count': len(unique_codes)})
+        return jsonify({
+            'success': True,
+            'remark': remark,
+            'updated_count': len(updates),
+            'unchanged_count': len(skipped),
+            'updates': updates,
+            'skipped': skipped
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
