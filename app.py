@@ -1081,43 +1081,36 @@ def get_latest_jianshang_codes():
             print("鉴赏码目录不存在")
             return jsonify({'success': False, 'error': '鉴赏码目录不存在', 'filename': None, 'extracted_count': 0}), 404
         
-        # 获取目录中的所有文件
-        # 找到最新的文件，优先选择非今天的文件
-        latest_file = None
-        latest_timestamp = 0
-        today_latest_file = None
-        today_latest_timestamp = 0
-        
-        current_date_str = datetime.now().strftime('%Y%m%d')
-
+        # 获取目录中的所有文件，优先选择“今天之前”最新的文件
         files = os.listdir(output_dir)
-        for f in files:
-            if f.startswith('score_codes_') and f.endswith('.txt'):
-                try:
-                    timestamp_str = f.replace('score_codes_', '').replace('.txt', '')
-                    file_date_str = timestamp_str.split('_')[0]
-                    timestamp = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S').timestamp()
-                    
-                    if file_date_str == current_date_str:
-                        # 如果是今天的文件，记录下来，但不作为首选
-                        if timestamp > today_latest_timestamp:
-                            today_latest_timestamp = timestamp
-                            today_latest_file = f
-                    else:
-                        # 如果不是今天的文件，正常比较
-                        if timestamp > latest_timestamp:
-                            latest_timestamp = timestamp
-                            latest_file = f
-                except ValueError:
-                    continue
+        current_date_str = datetime.now().strftime('%Y%m%d')
+        latest_before_today = None
+        latest_before_today_ts = None
+        latest_today = None
+        latest_today_ts = None
 
-        # 如果找到了非今天的文件，则使用它
-        if latest_file:
-            pass
-        # 否则，如果只找到了今天的文件，则使用最新的今天的文件
-        elif today_latest_file:
-            latest_file = today_latest_file
-        # 如果都没有找到，则 latest_file 仍然是 None
+        for f in files:
+            if not (f.startswith('score_codes_') and f.endswith('.txt')):
+                continue
+            try:
+                timestamp_str = f.replace('score_codes_', '').replace('.txt', '')
+                dt = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+            except ValueError:
+                continue
+
+            date_part = dt.strftime('%Y%m%d')
+            ts = dt.timestamp()
+
+            if date_part < current_date_str:
+                if latest_before_today_ts is None or ts > latest_before_today_ts:
+                    latest_before_today_ts = ts
+                    latest_before_today = f
+            elif date_part == current_date_str:
+                if latest_today_ts is None or ts > latest_today_ts:
+                    latest_today_ts = ts
+                    latest_today = f
+
+        latest_file = latest_before_today or latest_today
 
         if not latest_file:
             print("未找到任何鉴赏码文件")
@@ -1140,38 +1133,6 @@ def get_latest_jianshang_codes():
             'filename': latest_file,
             'extracted_count': len(codes)
         })
-        files = os.listdir(output_dir)
-        print(f"目录中的文件: {files}")
-        if not files:
-            print("没有找到鉴赏码文件")
-            return jsonify({'success': False, 'error': '没有找到鉴赏码文件'}), 404
-        
-        # 过滤出txt文件并按时间排序
-        txt_files = [f for f in files if f.endswith('.txt')]
-        print(f"txt文件: {txt_files}")
-        if not txt_files:
-            print("没有找到txt格式的鉴赏码文件")
-            return jsonify({'success': False, 'error': '没有找到鉴赏码文件'}), 404
-        
-        # 按文件名排序，最新的文件应该在最后面（因为文件名包含时间戳）
-        txt_files.sort()
-        latest_file = txt_files[-1]  # 获取最新的文件
-        print(f"最新的文件: {latest_file}")
-        
-        # 读取文件内容
-        file_path = os.path.join(output_dir, latest_file)
-        print(f"读取文件路径: {file_path}")
-        with open(file_path, 'r', encoding='utf-8') as f:
-            codes = [line.strip() for line in f.readlines() if line.strip()]
-        print(f"读取到的码数量: {len(codes)}")
-        
-        result = {
-            'success': True,
-            'codes': codes,
-            'file_name': latest_file
-        }
-        print(f"返回结果: {result}")
-        return jsonify(result)
     except Exception as e:
         print(f"获取最新鉴赏码时发生错误: {str(e)}")
         import traceback
