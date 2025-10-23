@@ -293,6 +293,8 @@ h1 {
     border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 1em;
+    color: var(--text-primary);
+    background-color: var(--input-bg);
 }
 .save-btn {
     padding: 8px 20px;
