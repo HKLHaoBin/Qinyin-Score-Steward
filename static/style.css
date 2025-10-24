@@ -1051,6 +1051,34 @@ h1 {
 
 .qyj-tip { padding: 10px 12px; background: var(--tip-bg, rgba(138,180,248,.15)); border: 1px dashed var(--tip-border, rgba(138,180,248,.6)); border-radius: 10px; }
 .qyj-tip-sm { margin-top: 6px; font-size: 12px; opacity: .7; }
+.qyj-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(92,138,255,0.95), rgba(170,106,255,0.95));
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  box-shadow: 0 6px 18px rgba(105, 124, 255, 0.28);
+  transition: transform 0.18s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.qyj-link-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 10px 26px rgba(105, 124, 255, 0.32);
+}
+.qyj-link-btn:focus-visible {
+  outline: 2px solid rgba(92,138,255,0.6);
+  outline-offset: 2px;
+}
+.qyj-link-btn__icon {
+  font-size: 14px;
+  line-height: 1;
+}
 
 .qyj-modal__actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
 .qyj-btn { border: 0; padding: 9px 14px; border-radius: 10px; cursor: pointer; }
