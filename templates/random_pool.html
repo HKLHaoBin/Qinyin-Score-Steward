@@ -22,6 +22,7 @@
         })();
     </script>
     <script src="/static/dark-mode.js"></script>
+    <script src="/static/review_modal.js"></script>
     <style>
         body { background-color: var(--bg-primary); }
         .container { max-width: 900px; margin: 30px auto; background-color: var(--bg-secondary); border-radius: 18px; box-shadow: 0 4px 24px var(--shadow-color); padding: 32px 24px; }
@@ -69,7 +70,7 @@
         .pool-table tr:hover {
             background-color: var(--table-hover);
         }
-        .completion-cell, .favorite-cell {
+        .completion-cell, .favorite-cell, .review-cell {
             cursor: pointer; border-radius: 6px; transition: background 0.18s, color 0.18s;
         }
         .completion-cell:hover {
@@ -79,6 +80,12 @@
             font-size: 1.25em; transition: color 0.18s;
         }
         .favorite-cell:hover {
+            color: var(--accent-color);
+        }
+        .review-cell {
+            font-size: 1.2em; transition: color 0.18s;
+        }
+        .review-cell:hover {
             color: var(--accent-color);
         }
         .pool-actions { margin-top: 0.7em; }
@@ -161,7 +168,91 @@
         <div class="pool-list" id="poolList"></div>
         <div id="randomCopyInfo" style="margin-top: 18px;"></div>
     </div>
+
+    <!-- 评价弹窗 -->
+    <div id="reviewModal" class="qyj-modal" aria-hidden="true">
+      <div class="qyj-modal__backdrop" data-close-modal></div>
+      <div class="qyj-modal__card" role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+        <div class="qyj-modal__header">
+          <h3 id="reviewTitle">添加评价</h3>
+          <button class="qyj-modal__close" id="reviewCloseBtn" aria-label="关闭">✕</button>
+        </div>
+
+        <div class="qyj-field">
+          <label class="qyj-label">打分</label>
+          <div id="starGroup" class="qyj-stars" role="radiogroup" aria-label="喜欢程度 1 到 5 星">
+            <button type="button" class="qyj-star" data-val="1" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="2" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="3" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="4" aria-checked="false" role="radio">☆</button>
+            <button type="button" class="qyj-star" data-val="5" aria-checked="true" role="radio">☆</button>
+            <input type="hidden" id="reviewRating" value="5">
+          </div>
+        </div>
+
+        <div class="qyj-field">
+          <label class="qyj-label" for="reviewComment">评语（为什么喜欢？） *</label>
+          <textarea id="reviewComment" rows="4" class="qyj-textarea" placeholder="这一段最打动我的是…" required></textarea>
+        </div>
+
+        <div class="qyj-field" id="reviewVideoSourceField">
+          <label class="qyj-label">视频来源 *</label>
+          <div class="qyj-radio-group" id="reviewVideoSourceGroup">
+            <label class="qyj-radio">
+              <input type="radio" name="reviewVideoSource" value="upload" checked>
+              上传视频文件
+            </label>
+            <label class="qyj-radio">
+              <input type="radio" name="reviewVideoSource" value="external">
+              使用视频链接 / B站嵌入代码
+            </label>
+          </div>
+        </div>
+
+        <div class="qyj-field" id="reviewFileRow">
+          <label class="qyj-label" for="reviewVideo">上传实录视频 *</label>
+          <label class="qyj-file">
+            <input type="file" id="reviewVideo" accept=".mp4,.mov,.m4v,.webm,.avi,.mkv">
+            <span class="qyj-file__btn">选择文件</span>
+            <span class="qyj-file__name" id="videoFileName">未选择文件</span>
+          </label>
+          <div class="qyj-tip-sm">支持 mp4 / mov / webm / avi / mkv；文件较大会花更久时间。</div>
+        </div>
+
+        <div class="qyj-field" id="reviewUrlRow" style="display:none;">
+          <div class="qyj-tip-sm">
+            <a href="https://member.bilibili.com/platform/upload/video/frame" target="_blank" rel="noopener noreferrer">跳转投稿</a>
+          </div>
+          <label class="qyj-label" for="reviewVideoUrl">视频链接或嵌入代码 *</label>
+          <textarea id="reviewVideoUrl" rows="3" class="qyj-textarea" placeholder="例如 https://example.com/video.mp4 或粘贴 B站嵌入代码"></textarea>
+          <div class="qyj-tip-sm">支持 http(s) 视频链接，或粘贴 B站“分享 → 嵌入代码”中的 iframe。</div>
+        </div>
+
+        <div class="qyj-field" id="reviewPreviewRow" style="display:none;">
+          <label class="qyj-label">视频预览</label>
+          <video id="reviewVideoPreview" controls style="width:100%; border-radius:10px; outline: none; display:none;"></video>
+          <div id="reviewEmbedPreview" class="review-embed" style="display:none;"></div>
+        </div>
+
+        <div class="qyj-tip">
+          提示：这是对一个谱子的最高评价。<br>
+          带 * 号的为必填项：评语必须填写，视频可选择上传文件或提供外部链接 / B站嵌入代码。
+        </div>
+
+        <div class="qyj-modal__actions">
+          <button id="reviewCancelBtn" class="qyj-btn qyj-btn--ghost">取消</button>
+          <button id="reviewSubmitBtn" class="qyj-btn qyj-btn--primary">保存评价</button>
+        </div>
+        <div id="reviewMsg" class="qyj-msg" aria-live="polite"></div>
+      </div>
+    </div>
+
     <script>
+    const reviewModalInstance = new ReviewModal();
+    if (!reviewModalInstance.isReady()) {
+        console.warn('ReviewModal: 随机池页弹窗初始化失败');
+    }
+
     // 辅助函数
     function filterDesc(filter) {
         let arr = [];
@@ -281,6 +372,7 @@
                                     <button class="header-fav-btn" data-fav="2">仅未收藏</button>
                                 </div>
                             </th>
+                            <th>评价</th>
                         </tr></thead>
                         <tbody>
                             ${pool.codes.map(code => `
@@ -288,6 +380,7 @@
                                     <td>${code}</td>
                                     <td class="completion-cell" data-code="${code}">-</td>
                                     <td class="favorite-cell" data-code="${code}">-</td>
+                                    <td class="review-cell" data-code="${code}">🩶</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -328,6 +421,40 @@
                     favCell.textContent = r.is_favorite ? '★' : '☆';
                     favCell.style.cursor = 'default';
                     favCell.onclick = null;
+                }
+                // 评价
+                const reviewCell = document.querySelector(`.pool-card [data-code='${r.score_code}'].review-cell`);
+                if (reviewCell) {
+                    let hasReview = !!r.has_review;
+                    const refreshHeart = () => {
+                        reviewCell.textContent = hasReview ? '❤️' : '🩶';
+                        reviewCell.title = hasReview ? '查看评价' : '添加评价';
+                    };
+                    refreshHeart();
+                    reviewCell.style.cursor = reviewModalInstance.isReady() ? 'pointer' : 'not-allowed';
+                    reviewCell.onclick = async () => {
+                        if (!reviewModalInstance.isReady()) {
+                            showToast('评价弹窗未初始化');
+                            return;
+                        }
+                        const preferredMode = hasReview ? 'view' : 'create';
+                        const { mode } = await reviewModalInstance.open({
+                            scoreCode: r.score_code,
+                            mode: preferredMode,
+                            onSaved: () => {
+                                hasReview = true;
+                                refreshHeart();
+                                loadPools();
+                            }
+                        });
+                        if (mode === 'view') {
+                            hasReview = true;
+                            refreshHeart();
+                        } else if (preferredMode === 'view' && mode === 'create') {
+                            hasReview = false;
+                            refreshHeart();
+                        }
+                    };
                 }
             }
         }
@@ -462,7 +589,7 @@
             if (detailData.success && detailData.results.length > 0) {
                 updateRandomCopyCard(detailData.results[0]);
             } else {
-                updateRandomCopyCard({ score_code: data.code, completion: null, is_favorite: false });
+                updateRandomCopyCard({ score_code: data.code, completion: null, is_favorite: false, has_review: false });
             }
             loadPools();
         } else {
@@ -473,8 +600,11 @@
     // 小卡片渲染和事件绑定
     function updateRandomCopyCard(scoreObj) {
         const randomCopyInfo = document.getElementById('randomCopyInfo');
-        const completionText = scoreObj.completion !== null ? `${scoreObj.completion}%` : '未完成';
+        if (!randomCopyInfo) return;
+        const hasCompletion = scoreObj.completion !== null && scoreObj.completion !== undefined;
+        const completionText = hasCompletion ? `${scoreObj.completion}%` : '未完成';
         const favoriteIcon = scoreObj.is_favorite ? '★' : '☆';
+        const heartIcon = scoreObj.has_review ? '❤️' : '🩶';
         randomCopyInfo.innerHTML = `
           <div class="random-info-card">
             <div class="score-code-row">
@@ -483,6 +613,9 @@
             </div>
             <div class="completion-row">
               完成率：<span class="completion-badge" style="cursor:pointer;">${completionText}</span>
+            </div>
+            <div class="actions-row" style="margin-top:10px; display:flex; gap:8px;">
+              <button class="review-trigger" type="button" style="cursor:pointer;">${heartIcon}</button>
             </div>
           </div>
         `;
@@ -531,6 +664,42 @@
                 showToast('网络错误，操作失败');
             }
         };
+        // 绑定评价按钮事件
+        const reviewTrigger = randomCopyInfo.querySelector('.review-trigger');
+        if (reviewTrigger) {
+            let hasReview = !!scoreObj.has_review;
+            const refreshHeart = () => {
+                reviewTrigger.textContent = hasReview ? '❤️' : '🩶';
+                reviewTrigger.title = hasReview ? '查看评价' : '添加评价';
+            };
+            refreshHeart();
+            reviewTrigger.onclick = async () => {
+                if (!reviewModalInstance.isReady()) {
+                    showToast('评价弹窗未初始化');
+                    return;
+                }
+                const preferredMode = hasReview ? 'view' : 'create';
+                const { mode } = await reviewModalInstance.open({
+                    scoreCode: scoreObj.score_code,
+                    mode: preferredMode,
+                    onSaved: () => {
+                        hasReview = true;
+                        scoreObj.has_review = true;
+                        refreshHeart();
+                        loadPools();
+                    }
+                });
+                if (mode === 'view') {
+                    hasReview = true;
+                    scoreObj.has_review = true;
+                    refreshHeart();
+                } else if (preferredMode === 'view' && mode === 'create') {
+                    hasReview = false;
+                    scoreObj.has_review = false;
+                    refreshHeart();
+                }
+            };
+        }
     }
 
     // 删除池
