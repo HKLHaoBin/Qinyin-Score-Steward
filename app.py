@@ -795,34 +795,60 @@ def batch_update_remarks():
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
 
+        # 批量获取已有备注，避免逐条查询造成的性能瓶颈
+        existing_map = {}
+        chunk_size = 500  # 小于 SQLite 变量上限 999
+        for start in range(0, len(unique_codes), chunk_size):
+            chunk = unique_codes[start:start + chunk_size]
+            placeholders = ','.join(['?'] * len(chunk))
+            c.execute(
+                f'''
+                SELECT score_code, remark, created_at
+                FROM scores
+                WHERE score_code IN ({placeholders})
+                ''',
+                chunk
+            )
+            for score_code, existing_remark, created_at in c.fetchall():
+                prev = existing_map.get(score_code)
+                # 仅保留最新的 created_at 记录
+                if not prev or (created_at or '') > prev[1]:
+                    existing_map[score_code] = ((existing_remark or ''), created_at or '')
+
         updates = []
         skipped = []
+        update_payload = []
+        insert_payload = []
 
         for code in unique_codes:
-            c.execute('SELECT remark FROM scores WHERE score_code = ? ORDER BY created_at DESC LIMIT 1', (code,))
-            row = c.fetchone()
-            existing_remark = row[0] if row else ''
-            merged = merge_remark(existing_remark or '', remark)
+            existing_entry = existing_map.get(code)
+            existing_remark = existing_entry[0] if existing_entry else ''
+            merged = merge_remark(existing_remark, remark)
+            original_trimmed = (existing_remark or '').strip()
 
-            if row:
-                original = (existing_remark or '').strip()
-                if merged != original:
-                    c.execute(
-                        'UPDATE scores SET remark = ?, created_at = CURRENT_TIMESTAMP WHERE score_code = ?',
-                        (merged, code)
-                    )
+            if existing_entry:
+                if merged != original_trimmed:
+                    update_payload.append((merged, code))
                     updates.append({'score_code': code, 'remark': merged})
                 else:
-                    skipped.append({'score_code': code, 'remark': original})
+                    skipped.append({'score_code': code, 'remark': original_trimmed})
             else:
                 if merged:
-                    c.execute('''
-                        INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, remark, created_at)
-                        VALUES (?, ?, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
-                    ''', (code, None, merged))
+                    insert_payload.append((code, None, merged))
                     updates.append({'score_code': code, 'remark': merged})
                 else:
                     skipped.append({'score_code': code, 'remark': ''})
+
+        if update_payload:
+            c.executemany(
+                'UPDATE scores SET remark = ?, created_at = CURRENT_TIMESTAMP WHERE score_code = ?',
+                update_payload
+            )
+        if insert_payload:
+            c.executemany('''
+                INSERT INTO scores (score_code, completion, difficulty, region, is_favorite, remark, created_at)
+                VALUES (?, ?, 0, 'CN', 0, ?, CURRENT_TIMESTAMP)
+            ''', insert_payload)
 
         conn.commit()
         conn.close()
