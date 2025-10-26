@@ -22,6 +22,8 @@
     --table-header-bg: #eef1f5;
     --table-row-even: #f9f9f9;
     --table-hover: #eef7ff;
+    --remark-row-bg: #f2f6ff;
+    --remark-row-border: #d6e2ff;
 }
 
 [data-theme="dark"] {
@@ -48,6 +50,8 @@
     --table-header-bg: #3a3a3a;
     --table-row-even: #222222;
     --table-hover: #2d4d6a;
+    --remark-row-bg: rgba(90, 164, 255, 0.16);
+    --remark-row-border: rgba(90, 164, 255, 0.3);
 }
 
 /* 为包含文本和背景的元素应用主题切换过渡效果 */
@@ -635,6 +639,38 @@ h1 {
 
 #resultsTable td:nth-child(3) {
     text-align: center;
+}
+
+#resultsTable tr.remark-row td {
+    background-color: var(--remark-row-bg);
+    color: var(--text-secondary);
+    text-align: left;
+    font-size: 13px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--remark-row-border);
+    cursor: default;
+}
+
+#resultsTable tr.remark-row:hover td {
+    background-color: var(--remark-row-bg);
+}
+
+.remark-cell-wrap {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    width: 100%;
+}
+
+.remark-cell-label {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.remark-cell-content {
+    flex: 1 1 auto;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .nav-links {

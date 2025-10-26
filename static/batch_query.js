@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialChromeInitializedElement = document.getElementById('initialChromeInitialized');
     const hideCompletionCheckbox = document.getElementById('hideCompletion');
     const hideFavoriteCheckbox = document.getElementById('hideFavorite');
+    const showAllRemarksCheckbox = document.getElementById('showAllRemarks');
     const excludeCodesTextarea = document.getElementById('excludeCodes');
     const excludeBtn = document.getElementById('excludeBtn');
     const includeRemarkInput = document.getElementById('includeRemark');
@@ -501,6 +502,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         filteredResults.forEach(result => {
             const row = document.createElement('tr');
+            const remarkText = (result.remark || '').toString();
+            const remarkExists = remarkText.trim().length > 0;
 
             const codeCell = document.createElement('td');
             codeCell.textContent = result.score_code;
@@ -525,8 +528,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 favoriteIndicator.title = result.is_favorite ? '已收藏' : '未收藏';
                 actionWrap.appendChild(favoriteIndicator);
 
-                const remarkText = (result.remark || '').toString();
-                const remarkExists = remarkText.trim().length > 0;
                 const remarkBtnEl = document.createElement('button');
                 remarkBtnEl.className = 'remark-btn table-remark-btn';
                 if (remarkExists) {
@@ -590,6 +591,31 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             resultsBody.appendChild(row);
+            if (showAllRemarksCheckbox && showAllRemarksCheckbox.checked && remarkExists) {
+                const remarkRow = document.createElement('tr');
+                remarkRow.className = 'remark-row';
+                const remarkCell = document.createElement('td');
+                remarkCell.colSpan = row.children.length;
+                remarkCell.className = 'remark-cell';
+
+                const remarkWrap = document.createElement('div');
+                remarkWrap.className = 'remark-cell-wrap';
+
+                const remarkLabel = document.createElement('span');
+                remarkLabel.className = 'remark-cell-label';
+                remarkLabel.textContent = '备注：';
+                remarkWrap.appendChild(remarkLabel);
+
+                const remarkContent = document.createElement('span');
+                remarkContent.className = 'remark-cell-content';
+                remarkContent.textContent = remarkText;
+                remarkWrap.appendChild(remarkContent);
+
+                remarkCell.appendChild(remarkWrap);
+
+                remarkRow.appendChild(remarkCell);
+                resultsBody.appendChild(remarkRow);
+            }
         });
 
         // 更新曲谱数量显示
@@ -622,6 +648,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showIncompleteOnlyCheckbox.addEventListener('change', filterAndDisplayResults);
     hideCompletionCheckbox.addEventListener('change', filterAndDisplayResults);
     hideFavoriteCheckbox.addEventListener('change', filterAndDisplayResults);
+    showAllRemarksCheckbox?.addEventListener('change', filterAndDisplayResults);
 
     // 剪贴板更新（来自主页的完成率保存）
     socket.on('clipboard_update', function(data) {
