@@ -526,6 +526,7 @@ def check_clipboard():
                     cr.execute('SELECT 1 FROM reviews WHERE score_code = ? LIMIT 1', (current_content,))
                     has_review = cr.fetchone() is not None
                     conn_r.close()
+                    print(f"[clipboard] 曲谱 {current_content} 评价查询结果: {has_review}")
 
                     # 发送曲谱码到前端（新增 has_review）
                     socketio.emit('clipboard_update', {
@@ -617,7 +618,7 @@ def get_scores():
         conn.close()
 
         # —— 新增：批量查询这些 code 是否有评价 ——
-        codes = [r[1] for r in rows]
+        codes = [r[0] for r in rows]
         has_map = set()
         if codes:
             conn_r = sqlite3.connect('reviews.db')
@@ -626,6 +627,7 @@ def get_scores():
             cr.execute(f'SELECT DISTINCT score_code FROM reviews WHERE score_code IN ({placeholders})', codes)
             has_map = {t[0] for t in cr.fetchall()}
             conn_r.close()
+            print(f"[api/scores] 评价联查: 请求 {len(codes)} 条, 命中 {len(has_map)} 条")
 
         return jsonify([{
             'score_code': s[0],
@@ -1700,6 +1702,7 @@ def get_review(score_code):
     ''', (score_code,))
     row = c.fetchone()
     conn.close()
+    print(f"[api/reviews/{score_code}] has_review={bool(row)}")
     if not row:
         return jsonify({'success': True, 'has_review': False})
     return jsonify({
