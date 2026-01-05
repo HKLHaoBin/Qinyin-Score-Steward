@@ -584,6 +584,8 @@ def get_scores():
         min_completion = request.args.get('min_completion', type=int)
         max_completion = request.args.get('max_completion', type=int)
         favorite_filter = request.args.get('favorite', type=int)  # 0: 全部, 1: 收藏, 2: 未收藏
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int)
         
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
@@ -606,14 +608,28 @@ def get_scores():
         
         # 构建SQL查询
         query = '''
-        SELECT score_code, completion, is_favorite, remark, created_at 
-        FROM scores 
+        SELECT score_code, completion, is_favorite, remark, created_at
+        FROM scores
         '''
         if conditions:
             query += ' WHERE ' + ' AND '.join(conditions)
         query += ' ORDER BY created_at DESC'
-        
-        c.execute(query, params)
+
+        # 统计总数（仅在分页时需要）
+        total_records = None
+        if limit is not None:
+            count_query = 'SELECT COUNT(*) FROM scores'
+            if conditions:
+                count_query += ' WHERE ' + ' AND '.join(conditions)
+            c.execute(count_query, params)
+            total_records = c.fetchone()[0]
+
+            safe_limit = max(1, min(limit, 1000))
+            safe_offset = max(0, offset or 0)
+            query += ' LIMIT ? OFFSET ?'
+            c.execute(query, params + [safe_limit, safe_offset])
+        else:
+            c.execute(query, params)
         rows = c.fetchall()
         conn.close()
 
@@ -629,14 +645,24 @@ def get_scores():
             conn_r.close()
             print(f"[api/scores] 评价联查: 请求 {len(codes)} 条, 命中 {len(has_map)} 条")
 
-        return jsonify([{
+        payload = [{
             'score_code': s[0],
             'completion': s[1],
             'is_favorite': bool(s[2]),
             'remark': s[3] or '',
             'created_at': s[4],
             'has_review': s[0] in has_map   # ★ 新增字段
-        } for s in rows])
+        } for s in rows]
+
+        if limit is not None:
+            return jsonify({
+                'items': payload,
+                'total': total_records if total_records is not None else len(payload),
+                'limit': max(1, min(limit, 1000)),
+                'offset': max(0, offset or 0)
+            })
+
+        return jsonify(payload)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

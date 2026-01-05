@@ -36,12 +36,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let showFavoritesOnly = false;  // 显示收藏的标志
     let showScoreCodeOnly = false;  // 仅显示曲谱码的标志
     const HISTORY_CHUNK_SIZE = 40;
-    const HISTORY_RENDER_LIMIT = 400;
+    const HISTORY_PAGE_SIZE = 200;
     let historyDataCache = [];
-    let historyRenderLimit = HISTORY_RENDER_LIMIT;
+    let historyOffset = 0;
+    let historyTotal = 0;
+    let historyHasMore = true;
+    let historyLoading = false;
     let historyRenderToken = 0;
     let historyRenderRaf = null;
     let historyFetchController = null;
+    let historyObserver = null;
     
     // 创建统计信息显示元素
     const statsDiv = document.createElement('div');
@@ -61,15 +65,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('filterBtn').addEventListener('click', function() {
         showFavoritesOnly = !showFavoritesOnly;
         this.textContent = showFavoritesOnly ? '显示所有' : '仅显示收藏';
-        historyRenderLimit = HISTORY_RENDER_LIMIT;
-        renderHistoryFromCache({ preserveScroll: true });
+        refreshHistory();
     });
 
     // 曲谱码过滤按钮点击事件
     document.getElementById('scoreCodeFilterBtn').addEventListener('click', function() {
         showScoreCodeOnly = !showScoreCodeOnly;
         this.textContent = showScoreCodeOnly ? '显示完整信息' : '仅显示曲谱码';
-        historyRenderLimit = HISTORY_RENDER_LIMIT;
         renderHistoryFromCache({ preserveScroll: true });
     });
 
@@ -431,6 +433,8 @@ document.addEventListener('DOMContentLoaded', () => {
             created_at: payload.created_at,
             has_review: extra.has_review ?? false
         });
+        historyOffset += 1;
+        historyTotal = Math.max(historyTotal + 1, historyDataCache.length);
         return false;
     }
 
@@ -488,9 +492,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const finiteLimit = Number.isFinite(historyRenderLimit) ? historyRenderLimit : filtered.length;
-        const limited = filtered.slice(0, finiteLimit);
-        const hasMore = Number.isFinite(historyRenderLimit) && filtered.length > historyRenderLimit;
+        const limited = filtered;
+        const totalCount = historyTotal || filtered.length;
+        const hasMore = historyHasMore && filtered.length < totalCount;
 
         const token = ++historyRenderToken;
         let index = 0;
@@ -513,14 +517,70 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (preserveScroll) {
                     historyList.scrollTop = previousScrollTop;
                 }
-                if (hasMore) {
-                    appendHistoryOverflow(filtered.length);
-                }
+                appendHistoryOverflow(totalCount, filtered.length, hasMore);
                 historyList.removeAttribute('aria-busy');
             }
         };
 
         historyRenderRaf = requestAnimationFrame(renderChunk);
+    }
+
+    function resetHistoryState() {
+        historyDataCache = [];
+        historyOffset = 0;
+        historyTotal = 0;
+        historyHasMore = true;
+        historyLoading = false;
+        if (historyObserver) {
+            historyObserver.disconnect();
+            historyObserver = null;
+        }
+    }
+
+    async function fetchHistoryPage({ offset, limit, signal }) {
+        const params = new URLSearchParams();
+        params.set('limit', limit);
+        params.set('offset', offset);
+        if (showFavoritesOnly) {
+            params.set('favorite', '1');
+        }
+        const response = await fetch(`/api/scores?${params.toString()}`, { signal });
+        const data = await response.json();
+        if (Array.isArray(data)) {
+            return { items: data, total: data.length };
+        }
+        return {
+            items: Array.isArray(data.items) ? data.items : [],
+            total: Number.isFinite(data.total) ? data.total : 0
+        };
+    }
+
+    async function loadNextHistoryPage(options = {}) {
+        if (!historyList || historyLoading || !historyHasMore) return;
+        historyLoading = true;
+        try {
+            const result = await fetchHistoryPage({
+                offset: historyOffset,
+                limit: HISTORY_PAGE_SIZE,
+                signal: options.signal
+            });
+            if (options.signal && options.signal.aborted) return;
+            const items = result.items || [];
+            historyTotal = result.total || historyTotal || items.length;
+            historyHasMore = items.length > 0 && historyOffset + items.length < historyTotal;
+            historyOffset += items.length;
+            historyDataCache = historyDataCache.concat(items);
+            renderHistoryFromCache({ preserveScroll: historyOffset > items.length });
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return;
+            }
+            console.error('加载历史记录失败:', error);
+            historyList.innerHTML = '<div class="history-error">加载历史记录失败</div>';
+            historyList.removeAttribute('aria-busy');
+        } finally {
+            historyLoading = false;
+        }
     }
 
     async function refreshHistory() {
@@ -529,41 +589,47 @@ document.addEventListener('DOMContentLoaded', () => {
             historyFetchController.abort();
         }
         historyFetchController = new AbortController();
-        const { signal } = historyFetchController;
-        try {
-            const response = await fetch('/api/scores', { signal });
-            const scores = await response.json();
-            if (signal.aborted) return;
-            historyDataCache = Array.isArray(scores) ? scores : [];
-            historyRenderLimit = HISTORY_RENDER_LIMIT;
-            renderHistoryFromCache();
-        } catch (error) {
-            if (error.name === 'AbortError') {
-                return;
-            }
-            console.error('加载历史记录失败:', error);
-            historyList.innerHTML = '<div class="history-error">加载历史记录失败</div>';
-            historyList.removeAttribute('aria-busy');
-        }
+        resetHistoryState();
+        await loadNextHistoryPage({ signal: historyFetchController.signal });
     }
 
-    function appendHistoryOverflow(total) {
+    function setupHistoryObserver(triggerEl) {
+        if (!triggerEl || !('IntersectionObserver' in window)) return;
+        if (historyObserver) {
+            historyObserver.disconnect();
+        }
+        historyObserver = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            if (entry && entry.isIntersecting) {
+                loadNextHistoryPage({ signal: historyFetchController?.signal });
+            }
+        }, { rootMargin: '300px 0px' });
+        historyObserver.observe(triggerEl);
+    }
+
+    function appendHistoryOverflow(total, loaded, hasMore) {
         const container = document.createElement('div');
         container.className = 'history-load-more';
         const info = document.createElement('div');
         info.className = 'history-load-more__info';
-        const limitText = Number.isFinite(historyRenderLimit) ? historyRenderLimit : total;
-        info.textContent = `已显示最新 ${limitText} 条 / 共 ${total} 条`;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'history-load-more__btn';
-        btn.textContent = '加载全部';
-        btn.addEventListener('click', () => {
-            historyRenderLimit = Infinity;
-            renderHistoryFromCache();
-        }, { once: true });
+        info.textContent = `已加载 ${loaded} 条 / 共 ${total} 条`;
         container.appendChild(info);
-        container.appendChild(btn);
+        if (hasMore) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'history-load-more__btn';
+            btn.textContent = historyLoading ? '加载中...' : '加载更多';
+            btn.disabled = historyLoading;
+            btn.addEventListener('click', () => {
+                loadNextHistoryPage({ signal: historyFetchController?.signal });
+            });
+            container.appendChild(btn);
+            const trigger = document.createElement('div');
+            trigger.className = 'history-load-trigger';
+            trigger.setAttribute('aria-hidden', 'true');
+            container.appendChild(trigger);
+            setupHistoryObserver(trigger);
+        }
         historyList.appendChild(container);
     }
 
