@@ -584,6 +584,7 @@ def get_scores():
         min_completion = request.args.get('min_completion', type=int)
         max_completion = request.args.get('max_completion', type=int)
         favorite_filter = request.args.get('favorite', type=int)  # 0: 全部, 1: 收藏, 2: 未收藏
+        incomplete_only = request.args.get('incomplete_only', type=int)
         limit = request.args.get('limit', type=int)
         offset = request.args.get('offset', type=int)
         
@@ -594,12 +595,15 @@ def get_scores():
         conditions = []
         params = []
         
-        if min_completion is not None:
-            conditions.append('completion >= ?')
-            params.append(min_completion)
-        if max_completion is not None:
-            conditions.append('completion <= ?')
-            params.append(max_completion)
+        if incomplete_only:
+            conditions.append('completion IS NULL')
+        else:
+            if min_completion is not None:
+                conditions.append('completion >= ?')
+                params.append(min_completion)
+            if max_completion is not None:
+                conditions.append('completion <= ?')
+                params.append(max_completion)
         if favorite_filter is not None:
             if favorite_filter == 1:
                 conditions.append('is_favorite = 1')
@@ -934,6 +938,9 @@ def batch_query_scores():
         min_completion = data.get('min_completion')
         max_completion = data.get('max_completion')
         favorite = data.get('favorite')
+        incomplete_only = data.get('incomplete_only')
+        limit = data.get('limit')
+        offset = data.get('offset')
         include_remark_val = data.get('include_remark')
         exclude_remark_val = data.get('exclude_remark')
 
@@ -998,10 +1005,13 @@ def batch_query_scores():
         print("results after exclude:", [r['score_code'] for r in results])
 
         # 再根据完成率/收藏筛选
-        if min_completion is not None:
-            results = [r for r in results if r['completion'] is not None and r['completion'] >= min_completion]
-        if max_completion is not None:
-            results = [r for r in results if r['completion'] is not None and r['completion'] <= max_completion]
+        if incomplete_only:
+            results = [r for r in results if r['completion'] is None]
+        else:
+            if min_completion is not None:
+                results = [r for r in results if r['completion'] is not None and r['completion'] >= min_completion]
+            if max_completion is not None:
+                results = [r for r in results if r['completion'] is not None and r['completion'] <= max_completion]
         if favorite is not None:
             try:
                 favorite = int(favorite)
@@ -1011,6 +1021,34 @@ def batch_query_scores():
                     results = [r for r in results if not r['is_favorite']]
             except:
                 pass
+
+        def match_remark(value):
+            text = (value or '').lower()
+            for kw in include_keywords:
+                if kw not in text:
+                    return False
+            for kw in exclude_keywords:
+                if kw in text:
+                    return False
+            return True
+
+        if include_keywords or exclude_keywords:
+            results = [r for r in results if match_remark(r.get('remark', ''))]
+
+        total_filtered = len(results)
+
+        if limit is not None:
+            try:
+                limit_val = int(limit)
+            except (TypeError, ValueError):
+                limit_val = 200
+            safe_limit = max(1, min(limit_val, 1000))
+            try:
+                offset_val = int(offset or 0)
+            except (TypeError, ValueError):
+                offset_val = 0
+            safe_offset = max(0, offset_val)
+            results = results[safe_offset:safe_offset + safe_limit]
 
         # —— 新增：批量查询喜欢 ——
         all_codes = [r['score_code'] for r in results]
@@ -1026,24 +1064,13 @@ def batch_query_scores():
         for r in results:
             r['has_review'] = r['score_code'] in has_map  # ★ 新增字段
 
-        def match_remark(value):
-            text = (value or '').lower()
-            for kw in include_keywords:
-                if kw not in text:
-                    return False
-            for kw in exclude_keywords:
-                if kw in text:
-                    return False
-            return True
-
-        if include_keywords or exclude_keywords:
-            results = [r for r in results if match_remark(r.get('remark', ''))]
-
         return jsonify({
             'success': True,
             'results': results,
-            'total': len(score_codes),
-            'found': len(results)
+            'total': total_filtered,
+            'found': total_filtered,
+            'limit': limit,
+            'offset': offset
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -1306,20 +1333,110 @@ def create_random_pool():
 @app.route('/api/random_pool/list', methods=['GET'])
 def list_random_pools():
     try:
+        include_codes = request.args.get('include_codes', default=1, type=int)
         conn = sqlite3.connect('scores.db')
         c = conn.cursor()
         c.execute('SELECT id, name, filter_json, codes_json, created_at FROM random_pools ORDER BY created_at DESC')
-        pools = [
-            {
+        pools = []
+        for row in c.fetchall():
+            codes = json.loads(row[3])
+            pool = {
                 'id': row[0],
                 'name': row[1],
                 'filter': json.loads(row[2]),
-                'codes': json.loads(row[3]),
-                'created_at': row[4]
-            } for row in c.fetchall()
-        ]
+                'created_at': row[4],
+                'codes_count': len(codes)
+            }
+            if include_codes:
+                pool['codes'] = codes
+            pools.append(pool)
         conn.close()
         return jsonify({'success': True, 'pools': pools})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/random_pool/<int:pool_id>/codes', methods=['GET'])
+def get_pool_codes(pool_id):
+    try:
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        c.execute('SELECT codes_json FROM random_pools WHERE id = ?', (pool_id,))
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'success': False, 'error': '池不存在'}), 404
+        codes = json.loads(row[0])
+        return jsonify({'success': True, 'codes': codes, 'total': len(codes)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/random_pool/<int:pool_id>/items', methods=['GET'])
+def list_pool_items(pool_id):
+    try:
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int)
+        safe_limit = max(1, min(limit if limit is not None else 200, 1000))
+        safe_offset = max(0, offset or 0)
+
+        conn = sqlite3.connect('scores.db')
+        c = conn.cursor()
+        c.execute('SELECT codes_json FROM random_pools WHERE id = ?', (pool_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': '池不存在'}), 404
+        codes = json.loads(row[0])
+        total = len(codes)
+        if total == 0:
+            conn.close()
+            return jsonify({'success': True, 'items': [], 'total': 0, 'limit': safe_limit, 'offset': safe_offset})
+
+        slice_codes = codes[safe_offset:safe_offset + safe_limit]
+        completion_map = {}
+        favorite_map = {}
+
+        if slice_codes:
+            placeholders = ','.join(['?'] * len(slice_codes))
+            c.execute(f'''
+                SELECT s.score_code, s.completion, s.is_favorite
+                FROM scores s
+                JOIN (
+                    SELECT score_code, MAX(created_at) AS latest_time
+                    FROM scores
+                    GROUP BY score_code
+                ) ls ON s.score_code = ls.score_code AND s.created_at = ls.latest_time
+                WHERE s.score_code IN ({placeholders})
+            ''', slice_codes)
+            for code, comp, fav in c.fetchall():
+                completion_map[code] = comp
+                favorite_map[code] = bool(fav)
+        conn.close()
+
+        has_map = set()
+        if slice_codes:
+            conn_r = sqlite3.connect('reviews.db')
+            cr = conn_r.cursor()
+            placeholders = ','.join(['?'] * len(slice_codes))
+            cr.execute(f'SELECT DISTINCT score_code FROM reviews WHERE score_code IN ({placeholders})', slice_codes)
+            has_map = {t[0] for t in cr.fetchall()}
+            conn_r.close()
+
+        items = []
+        for code in slice_codes:
+            items.append({
+                'score_code': code,
+                'completion': completion_map.get(code),
+                'is_favorite': favorite_map.get(code, False),
+                'has_review': code in has_map
+            })
+
+        return jsonify({
+            'success': True,
+            'items': items,
+            'total': total,
+            'limit': safe_limit,
+            'offset': safe_offset
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -1767,8 +1884,10 @@ def list_liked_reviews():
         min_rating = request.args.get('min_rating', type=int)
         has_video = request.args.get('has_video', type=int)
         sort = (request.args.get('sort') or 'latest').lower()
-        limit = request.args.get('limit', default=100, type=int)
-        offset = request.args.get('offset', default=0, type=int)
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int)
+        safe_limit = max(1, min(limit if limit is not None else 100, 1000))
+        safe_offset = max(0, offset or 0)
 
         # 1) 取每个 score_code 最新的一条 review
         conn_r = sqlite3.connect('reviews.db')
@@ -1796,6 +1915,19 @@ def list_liked_reviews():
         elif sort == 'rating_asc':
             order_sql = 'ORDER BY r.rating ASC, r.created_at DESC'
 
+        count_sql = f'''
+            SELECT COUNT(*)
+            FROM reviews r
+            JOIN (
+                SELECT score_code, MAX(created_at) AS latest_time
+                FROM reviews
+                GROUP BY score_code
+            ) lr ON r.score_code = lr.score_code AND r.created_at = lr.latest_time
+            {where_sql}
+        '''
+        cr.execute(count_sql, params)
+        total_records = cr.fetchone()[0]
+
         sql = f'''
             SELECT r.id, r.score_code, r.rating, r.comment, r.video_path, r.created_at
             FROM reviews r
@@ -1808,7 +1940,7 @@ def list_liked_reviews():
             {order_sql}
             LIMIT ? OFFSET ?
         '''
-        params_ext = params + [limit, offset]
+        params_ext = params + [safe_limit, safe_offset]
         cr.execute(sql, params_ext)
         rows = cr.fetchall()
         conn_r.close()
@@ -1854,7 +1986,13 @@ def list_liked_reviews():
                 'remark': remark_map.get(code, '')
             })
 
-        return jsonify({'success': True, 'results': data})
+        return jsonify({
+            'success': True,
+            'results': data,
+            'total': total_records,
+            'limit': safe_limit,
+            'offset': safe_offset
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

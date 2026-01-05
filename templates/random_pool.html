@@ -256,6 +256,22 @@
         console.warn('ReviewModal: 随机池页弹窗初始化失败');
     }
 
+    const POOL_PAGE_SIZE = 200;
+    const poolStates = new Map();
+
+    function getPoolState(poolId) {
+        if (!poolStates.has(poolId)) {
+            poolStates.set(poolId, {
+                offset: 0,
+                total: 0,
+                hasMore: true,
+                loading: false,
+                observer: null
+            });
+        }
+        return poolStates.get(poolId);
+    }
+
     // 辅助函数
     function filterDesc(filter) {
         let arr = [];
@@ -264,6 +280,191 @@
         if (filter.favorite === 1) arr.push('仅收藏');
         if (filter.favorite === 2) arr.push('仅未收藏');
         return arr.length ? arr.join('，') : '无';
+    }
+
+    function updatePoolCount(poolId, total) {
+        const el = document.querySelector(`.pool-count[data-pool-id="${poolId}"]`);
+        if (el) {
+            el.textContent = `(${total}个)`;
+        }
+    }
+
+    function clearPoolTable(poolId) {
+        const tbody = document.querySelector(`.pool-table tbody[data-pool-id="${poolId}"]`);
+        if (tbody) {
+            tbody.innerHTML = '';
+        }
+    }
+
+    function buildPoolRow(item) {
+        const row = document.createElement('tr');
+        row.dataset.code = item.score_code;
+
+        const codeCell = document.createElement('td');
+        codeCell.textContent = item.score_code;
+        row.appendChild(codeCell);
+
+        const completionCell = document.createElement('td');
+        completionCell.className = 'completion-cell';
+        completionCell.dataset.code = item.score_code;
+        completionCell.textContent = item.completion !== null && item.completion !== undefined ? item.completion + '%' : '-';
+        row.appendChild(completionCell);
+
+        const favoriteCell = document.createElement('td');
+        favoriteCell.className = 'favorite-cell';
+        favoriteCell.dataset.code = item.score_code;
+        favoriteCell.textContent = item.is_favorite ? '★' : '☆';
+        row.appendChild(favoriteCell);
+
+        const reviewCell = document.createElement('td');
+        reviewCell.className = 'review-cell';
+        reviewCell.dataset.code = item.score_code;
+        row.appendChild(reviewCell);
+
+        let hasReview = !!item.has_review;
+        const refreshHeart = () => {
+            reviewCell.textContent = hasReview ? '❤️' : '🩶';
+            reviewCell.title = hasReview ? '查看评价' : '添加评价';
+        };
+        refreshHeart();
+        reviewCell.style.cursor = reviewModalInstance.isReady() ? 'pointer' : 'not-allowed';
+        reviewCell.onclick = async () => {
+            if (!reviewModalInstance.isReady()) {
+                showToast('评价弹窗未初始化');
+                return;
+            }
+            const preferredMode = hasReview ? 'view' : 'create';
+            const { mode } = await reviewModalInstance.open({
+                scoreCode: item.score_code,
+                mode: preferredMode,
+                onSaved: () => {
+                    hasReview = true;
+                    refreshHeart();
+                    loadPools();
+                }
+            });
+            if (mode === 'view') {
+                hasReview = true;
+                refreshHeart();
+            } else if (preferredMode === 'view' && mode === 'create') {
+                hasReview = false;
+                refreshHeart();
+            }
+        };
+
+        return row;
+    }
+
+    function setupPoolObserver(poolId, triggerEl) {
+        if (!triggerEl || !('IntersectionObserver' in window)) return;
+        const state = getPoolState(poolId);
+        if (state.observer) {
+            state.observer.disconnect();
+        }
+        state.observer = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            if (entry && entry.isIntersecting) {
+                loadPoolItems(poolId);
+            }
+        }, { rootMargin: '300px 0px' });
+        state.observer.observe(triggerEl);
+    }
+
+    function appendPoolOverflow(poolId) {
+        const tbody = document.querySelector(`.pool-table tbody[data-pool-id="${poolId}"]`);
+        if (!tbody) return;
+        const state = getPoolState(poolId);
+        const existing = tbody.querySelector('.pool-load-more');
+        if (existing) existing.remove();
+        if (!state.total) return;
+
+        const row = document.createElement('tr');
+        row.className = 'pool-load-more';
+        const cell = document.createElement('td');
+        cell.colSpan = 4;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'results-load-more__wrap';
+        const info = document.createElement('div');
+        info.className = 'results-load-more__info';
+        info.textContent = `已加载 ${state.offset} / 共 ${state.total} 条`;
+        wrap.appendChild(info);
+
+        if (state.hasMore) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'results-load-more__btn';
+            btn.textContent = state.loading ? '加载中...' : '加载更多';
+            btn.disabled = state.loading;
+            btn.addEventListener('click', () => loadPoolItems(poolId));
+            wrap.appendChild(btn);
+
+            const trigger = document.createElement('div');
+            trigger.className = 'results-load-trigger';
+            trigger.setAttribute('aria-hidden', 'true');
+            wrap.appendChild(trigger);
+            setupPoolObserver(poolId, trigger);
+        }
+
+        cell.appendChild(wrap);
+        row.appendChild(cell);
+        tbody.appendChild(row);
+    }
+
+    async function fetchPoolItems(poolId, offset, limit) {
+        const resp = await fetch(`/api/random_pool/${poolId}/items?limit=${limit}&offset=${offset}`);
+        const data = await resp.json();
+        if (!data.success) {
+            throw new Error(data.error || '加载失败');
+        }
+        return data;
+    }
+
+    async function loadPoolItems(poolId, options = {}) {
+        const state = getPoolState(poolId);
+        if (state.loading || !state.hasMore) return;
+        state.loading = true;
+        if (options.reset) {
+            state.offset = 0;
+            state.total = options.total || 0;
+            state.hasMore = true;
+            clearPoolTable(poolId);
+            if (!state.total) {
+                const tbody = document.querySelector(`.pool-table tbody[data-pool-id="${poolId}"]`);
+                if (tbody) {
+                    const row = document.createElement('tr');
+                    const cell = document.createElement('td');
+                    cell.colSpan = 4;
+                    cell.className = 'no-results';
+                    cell.textContent = '暂无记录';
+                    row.appendChild(cell);
+                    tbody.appendChild(row);
+                }
+                state.hasMore = false;
+                state.loading = false;
+                return;
+            }
+        }
+        try {
+            const data = await fetchPoolItems(poolId, state.offset, POOL_PAGE_SIZE);
+            const items = Array.isArray(data.items) ? data.items : [];
+            state.total = Number.isFinite(data.total) ? data.total : state.total;
+            state.offset += items.length;
+            state.hasMore = state.offset < state.total;
+
+            const tbody = document.querySelector(`.pool-table tbody[data-pool-id="${poolId}"]`);
+            if (tbody) {
+                items.forEach(item => {
+                    tbody.appendChild(buildPoolRow(item));
+                });
+                state.loading = false;
+                appendPoolOverflow(poolId);
+            }
+        } catch (error) {
+            showToast(error.message || '加载失败');
+        } finally {
+            state.loading = false;
+        }
     }
 
     // 自动检测localStorage并预填
@@ -332,14 +533,14 @@
 
     // 加载池列表
     async function loadPools() {
-        const resp = await fetch('/api/random_pool/list');
+        const resp = await fetch('/api/random_pool/list?include_codes=0');
         const data = await resp.json();
         if (!data.success) { document.getElementById('poolList').innerHTML = '加载失败'; return; }
         const pools = data.pools;
         let html = '';
         for (const pool of pools) {
             html += `<div class="pool-card" data-pool-id="${pool.id}">
-                <div class="pool-title">${pool.name} <span style="font-size:0.9em;color:var(--text-muted);">(${pool.codes.length}个)</span></div>
+                <div class="pool-title">${pool.name} <span class="pool-count" data-pool-id="${pool.id}" style="font-size:0.9em;color:var(--text-muted);">(${pool.codes_count}个)</span></div>
                 <div class="filter-desc">筛选条件：${filterDesc(pool.filter)}</div>
                 <div class="secondary-filter" style="margin-bottom:10px;display:flex;align-items:center;gap:10px;">
                     <input type="number" class="sec-min-completion" placeholder="最小完成率" min="0" max="100" style="width:90px;">
@@ -377,16 +578,7 @@
                             </th>
                             <th>评价</th>
                         </tr></thead>
-                        <tbody>
-                            ${pool.codes.map(code => `
-                                <tr data-code="${code}">
-                                    <td>${code}</td>
-                                    <td class="completion-cell" data-code="${code}">-</td>
-                                    <td class="favorite-cell" data-code="${code}">-</td>
-                                    <td class="review-cell" data-code="${code}">🩶</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
+                        <tbody data-pool-id="${pool.id}"></tbody>
                     </table>
                 </div>
                 <div class="pool-actions">
@@ -399,68 +591,15 @@
             </div>`;
         }
         document.getElementById('poolList').innerHTML = html || '<div>暂无随机池</div>';
-        // 加载每个池的曲谱码详情
+
         for (const pool of pools) {
-            if (!pool.codes.length) continue;
-            // 批量查详情
-            const resp = await fetch('/api/scores/batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ score_codes: pool.codes })
-            });
-            const data = await resp.json();
-            if (!data.success) continue;
-            for (const r of data.results) {
-                // 完成率
-                const cell = document.querySelector(`.pool-card [data-code='${r.score_code}'].completion-cell`);
-                if (cell) {
-                    cell.textContent = r.completion !== null ? r.completion + '%' : '-';
-                    cell.style.cursor = 'default';
-                    cell.onclick = null;
-                }
-                // 收藏
-                const favCell = document.querySelector(`.pool-card [data-code='${r.score_code}'].favorite-cell`);
-                if (favCell) {
-                    favCell.textContent = r.is_favorite ? '★' : '☆';
-                    favCell.style.cursor = 'default';
-                    favCell.onclick = null;
-                }
-                // 评价
-                const reviewCell = document.querySelector(`.pool-card [data-code='${r.score_code}'].review-cell`);
-                if (reviewCell) {
-                    let hasReview = !!r.has_review;
-                    const refreshHeart = () => {
-                        reviewCell.textContent = hasReview ? '❤️' : '🩶';
-                        reviewCell.title = hasReview ? '查看评价' : '添加评价';
-                    };
-                    refreshHeart();
-                    reviewCell.style.cursor = reviewModalInstance.isReady() ? 'pointer' : 'not-allowed';
-                    reviewCell.onclick = async () => {
-                        if (!reviewModalInstance.isReady()) {
-                            showToast('评价弹窗未初始化');
-                            return;
-                        }
-                        const preferredMode = hasReview ? 'view' : 'create';
-                        const { mode } = await reviewModalInstance.open({
-                            scoreCode: r.score_code,
-                            mode: preferredMode,
-                            onSaved: () => {
-                                hasReview = true;
-                                refreshHeart();
-                                loadPools();
-                            }
-                        });
-                        if (mode === 'view') {
-                            hasReview = true;
-                            refreshHeart();
-                        } else if (preferredMode === 'view' && mode === 'create') {
-                            hasReview = false;
-                            refreshHeart();
-                        }
-                    };
-                }
-            }
+            const state = getPoolState(pool.id);
+            state.offset = 0;
+            state.total = pool.codes_count || 0;
+            state.hasMore = state.total > 0;
+            loadPoolItems(pool.id, { reset: true, total: state.total });
         }
+
         // 绑定二次筛选事件
         document.querySelectorAll('.pool-card').forEach(card => {
             const poolId = card.getAttribute('data-pool-id');
@@ -484,7 +623,11 @@
                 });
                 const data = await resp.json();
                 if (data.success) {
-                    await loadPools();
+                    updatePoolCount(poolId, data.codes.length);
+                    const state = getPoolState(poolId);
+                    state.total = data.codes.length;
+                    state.hasMore = state.total > 0;
+                    await loadPoolItems(poolId, { reset: true, total: state.total });
                     showToast('筛选完成');
                 } else {
                     showToast('筛选失败：' + data.error);
@@ -520,7 +663,11 @@
                     });
                     const data = await resp.json();
                     if (data.success) {
-                        await loadPools();
+                        updatePoolCount(poolId, data.codes.length);
+                        const state = getPoolState(poolId);
+                        state.total = data.codes.length;
+                        state.hasMore = state.total > 0;
+                        await loadPoolItems(poolId, { reset: true, total: state.total });
                     } else {
                         showToast('筛选失败：' + data.error);
                     }
@@ -556,7 +703,11 @@
                         });
                         const data = await resp.json();
                         if (data.success) {
-                            await loadPools();
+                            updatePoolCount(poolId, data.codes.length);
+                            const state = getPoolState(poolId);
+                            state.total = data.codes.length;
+                            state.hasMore = state.total > 0;
+                            await loadPoolItems(poolId, { reset: true, total: state.total });
                         } else {
                             showToast('筛选失败：' + data.error);
                         }
@@ -725,18 +876,17 @@
         const codes = input.split(/\r?\n/).map(s=>s.trim()).filter(s=>/^\d{5,}$/.test(s));
         if (!codes.length) { showToast('无有效曲谱码'); if (btn) btn.disabled = false; return; }
         // 获取当前池内容
-        const resp = await fetch('/api/random_pool/list');
+        const resp = await fetch(`/api/random_pool/${poolId}/codes`);
         const data = await resp.json();
         if (!data.success) { showToast('操作失败'); if (btn) btn.disabled = false; return; }
-        const pool = data.pools.find(p=>p.id==poolId);
-        if (!pool) { showToast('池不存在'); if (btn) btn.disabled = false; return; }
+        const poolCodes = Array.isArray(data.codes) ? data.codes : [];
         let newCodes;
         if (type === 'query') {
             // 只保留输入的码且在池内
-            newCodes = pool.codes.filter(code=>codes.includes(code));
+            newCodes = poolCodes.filter(code=>codes.includes(code));
         } else {
             // 排除输入的码
-            newCodes = pool.codes.filter(code=>!codes.includes(code));
+            newCodes = poolCodes.filter(code=>!codes.includes(code));
         }
         // 更新池
         await fetch(`/api/random_pool/${poolId}/filter`, {
@@ -744,7 +894,11 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filter: {}, codes: newCodes })
         });
-        await loadPools();
+        updatePoolCount(poolId, newCodes.length);
+        const state = getPoolState(poolId);
+        state.total = newCodes.length;
+        state.hasMore = state.total > 0;
+        await loadPoolItems(poolId, { reset: true, total: state.total });
         showToast(type === 'query' ? '查询完成' : '排除完成');
         if (btn) btn.disabled = false;
     };

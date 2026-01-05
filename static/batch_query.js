@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const includeRemarkInput = document.getElementById('includeRemark');
     const excludeRemarkInput = document.getElementById('excludeRemark');
     const batchRemarkBtn = document.getElementById('batchRemarkBtn');
+    const createPoolFromBatchBtn = document.getElementById('createPoolFromBatchBtn');
     const remarkModal = document.getElementById('remarkModal');
     const remarkTextarea = document.getElementById('remarkTextarea');
     const remarkSaveBtn = document.getElementById('remarkSaveBtn');
@@ -64,6 +65,14 @@ document.addEventListener('DOMContentLoaded', () => {
         maxCompletion: null,
         favorite: 0  // 0: 全部, 1: 收藏, 2: 未收藏
     };
+    const RESULTS_PAGE_SIZE = 200;
+    let resultsOffset = 0;
+    let resultsTotal = 0;
+    let resultsHasMore = true;
+    let resultsLoading = false;
+    let resultsObserver = null;
+    let resultsFetchController = null;
+    let activeQuery = { mode: 'all', payload: {} };
 
     // 从文本中提取曲谱码
     function extractScoreCodes(text) {
@@ -96,16 +105,20 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
-    function loadData() {
-        if (hasCustomQuery()) {
-            doQuery();
-        } else {
-            refreshResults();
+    function resetResultsState() {
+        currentResults = [];
+        filteredResults = [];
+        resultsOffset = 0;
+        resultsTotal = 0;
+        resultsHasMore = true;
+        resultsLoading = false;
+        if (resultsObserver) {
+            resultsObserver.disconnect();
+            resultsObserver = null;
         }
     }
 
-    // 查询和排除统一的查询行为
-    function doQuery() {
+    function buildActiveQuery() {
         const rawScoreCodes = scoreCodesTextarea.value.trim();
         const rawExcludeCodes = excludeCodesTextarea.value.trim();
         const codes = rawScoreCodes ? extractScoreCodes(rawScoreCodes) : [];
@@ -113,36 +126,134 @@ document.addEventListener('DOMContentLoaded', () => {
         const includeRemarkRaw = includeRemarkInput ? includeRemarkInput.value.trim() : '';
         const excludeRemarkRaw = excludeRemarkInput ? excludeRemarkInput.value.trim() : '';
         const hasRemarkFilter = includeRemarkRaw.length > 0 || excludeRemarkRaw.length > 0;
-        // 只要有曲谱码、排除或备注筛选，就使用批量接口
         if (codes.length > 0 || excludeCodes.length > 0 || hasRemarkFilter) {
-            fetch('/api/scores/batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    score_codes: codes, 
+            return {
+                mode: 'batch',
+                payload: {
+                    score_codes: codes,
                     exclude_codes: excludeCodes,
-                    min_completion: currentFilters.minCompletion,
-                    max_completion: currentFilters.maxCompletion,
-                    favorite: currentFilters.favorite,
                     include_remark: includeRemarkRaw,
                     exclude_remark: excludeRemarkRaw
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    displayResults(data.results);
-                } else {
-                    alert(data.error || '查询失败');
                 }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('查询失败');
-            });
-        } else {
-            refreshResults(); // 全部无内容时才全量
+            };
         }
+        return { mode: 'all', payload: {} };
+    }
+
+    function getCommonFilters() {
+        return {
+            min_completion: currentFilters.minCompletion,
+            max_completion: currentFilters.maxCompletion,
+            favorite: currentFilters.favorite,
+            incomplete_only: showIncompleteOnlyCheckbox.checked ? 1 : 0
+        };
+    }
+
+    async function fetchResultsPage({ offset, limit, signal }) {
+        const filters = getCommonFilters();
+        if (activeQuery.mode === 'batch') {
+            const payload = {
+                ...activeQuery.payload,
+                ...filters,
+                limit,
+                offset
+            };
+            const response = await fetch('/api/scores/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || '查询失败');
+            }
+            return {
+                items: Array.isArray(data.results) ? data.results : [],
+                total: Number.isFinite(data.total) ? data.total : 0
+            };
+        }
+        const params = new URLSearchParams();
+        params.append('limit', limit);
+        params.append('offset', offset);
+        if (filters.min_completion !== null) {
+            params.append('min_completion', filters.min_completion);
+        }
+        if (filters.max_completion !== null) {
+            params.append('max_completion', filters.max_completion);
+        }
+        if (filters.favorite !== null) {
+            params.append('favorite', filters.favorite);
+        }
+        if (filters.incomplete_only) {
+            params.append('incomplete_only', '1');
+        }
+        const response = await fetch(`/api/scores?${params.toString()}`, { signal });
+        const data = await response.json();
+        if (Array.isArray(data)) {
+            return { items: data, total: data.length };
+        }
+        return {
+            items: Array.isArray(data.items) ? data.items : [],
+            total: Number.isFinite(data.total) ? data.total : 0
+        };
+    }
+
+    async function loadNextResultsPage(options = {}) {
+        if (resultsLoading || !resultsHasMore) return;
+        resultsLoading = true;
+        try {
+            const result = await fetchResultsPage({
+                offset: resultsOffset,
+                limit: RESULTS_PAGE_SIZE,
+                signal: options.signal
+            });
+            if (options.signal && options.signal.aborted) return;
+            const items = Array.isArray(result.items) ? result.items : [];
+            const normalized = items.map(item => ({
+                ...item,
+                remark: item && item.remark != null ? item.remark : ''
+            }));
+            if (Number.isFinite(result.total)) {
+                resultsTotal = result.total;
+            }
+            currentResults = currentResults.concat(normalized);
+            resultsOffset += normalized.length;
+            if (Number.isFinite(resultsTotal) && resultsTotal > 0) {
+                resultsHasMore = resultsOffset < resultsTotal;
+            } else {
+                resultsHasMore = normalized.length >= RESULTS_PAGE_SIZE;
+            }
+            resultsLoading = false;
+            filterAndDisplayResults();
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return;
+            }
+            console.error('Error:', error);
+            showToast(error.message || '获取数据失败');
+            const colCount = getColumnCount();
+            resultsBody.innerHTML = `<tr><td colspan="${colCount}" class="error">加载失败，请重试</td></tr>`;
+        } finally {
+            resultsLoading = false;
+        }
+    }
+
+    async function loadData() {
+        activeQuery = buildActiveQuery();
+        resetResultsState();
+        if (resultsFetchController) {
+            resultsFetchController.abort();
+        }
+        resultsFetchController = new AbortController();
+        const colCount = getColumnCount();
+        resultsBody.innerHTML = `<tr><td colspan="${colCount}" class="loading">加载中...</td></tr>`;
+        await loadNextResultsPage({ signal: resultsFetchController.signal });
+    }
+
+    // 查询和排除统一的查询行为
+    function doQuery() {
+        loadData();
     }
     queryBtn.addEventListener('click', doQuery);
     excludeBtn.addEventListener('click', doQuery);
@@ -154,17 +265,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
-    batchRemarkBtn?.addEventListener('click', () => {
-        if (!filteredResults.length) {
+    batchRemarkBtn?.addEventListener('click', async () => {
+        if (!filteredResults.length && !resultsHasMore) {
             showToast('当前表格没有可备注的谱子');
             return;
         }
-        const codes = unique(filteredResults.map(item => item.score_code));
-        const filledRemarks = unique(filteredResults
+        if (resultsHasMore) {
+            showToast('正在准备完整结果，请稍候…');
+        }
+        const sourceResults = resultsHasMore ? await fetchAllResultsForAction() : filteredResults;
+        if (!sourceResults.length) {
+            showToast('当前表格没有可备注的谱子');
+            return;
+        }
+        const codes = unique(sourceResults.map(item => item.score_code));
+        const filledRemarks = unique(sourceResults
             .map(item => (item.remark || '').toString().trim())
             .filter(Boolean));
         const initialRemark = filledRemarks.length === 1
-            ? filteredResults.find(item => (item.remark || '').toString().trim() === filledRemarks[0])?.remark || ''
+            ? sourceResults.find(item => (item.remark || '').toString().trim() === filledRemarks[0])?.remark || ''
             : '';
         openRemarkModal({
             mode: 'batch',
@@ -236,48 +355,12 @@ document.addEventListener('DOMContentLoaded', () => {
         loadData();
     });
 
-    // 刷新结果
-    function refreshResults() {
-        const params = new URLSearchParams();
-        if (currentFilters.minCompletion !== null) {
-            params.append('min_completion', currentFilters.minCompletion);
-        }
-        if (currentFilters.maxCompletion !== null) {
-            params.append('max_completion', currentFilters.maxCompletion);
-        }
-        if (currentFilters.favorite !== 0) {
-            params.append('favorite', currentFilters.favorite);
-        }
-
-        // 显示加载状态
-        resultsBody.innerHTML = '<tr><td colspan="3" class="loading">加载中...</td></tr>';
-
-        fetch(`/api/scores?${params.toString()}`)
-            .then(response => response.json())
-            .then(scores => {
-                displayResults(scores);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showToast('获取数据失败');
-                resultsBody.innerHTML = '<tr><td colspan="3" class="error">加载失败，请重试</td></tr>';
-            });
-    }
-
-    // 显示结果
-    function displayResults(results) {
-        const safeResults = Array.isArray(results) ? results : [];
-        currentResults = safeResults.map(item => ({
-            ...item,
-            remark: item && item.remark != null ? item.remark : ''
-        }));
-        filterAndDisplayResults();
-        if (lastRandomScore) {
-            const latest = currentResults.find(item => item.score_code === lastRandomScore.score_code);
-            if (latest) {
-                lastRandomScore = latest;
-                updateRandomCopyCard(lastRandomScore);
-            }
+    function refreshRandomCard() {
+        if (!lastRandomScore) return;
+        const latest = currentResults.find(item => item.score_code === lastRandomScore.score_code);
+        if (latest) {
+            lastRandomScore = latest;
+            updateRandomCopyCard(lastRandomScore);
         }
     }
 
@@ -301,6 +384,29 @@ document.addEventListener('DOMContentLoaded', () => {
             updateRandomCopyCard(lastRandomScore);
         }
         return changed;
+    }
+
+    async function fetchAllResultsForAction() {
+        const collected = [];
+        let offset = 0;
+        let total = Infinity;
+        while (offset < total) {
+            const result = await fetchResultsPage({ offset, limit: RESULTS_PAGE_SIZE });
+            const items = Array.isArray(result.items) ? result.items : [];
+            const normalized = items.map(item => ({
+                ...item,
+                remark: item && item.remark != null ? item.remark : ''
+            }));
+            collected.push(...normalized);
+            if (Number.isFinite(result.total)) {
+                total = result.total;
+            }
+            if (!normalized.length || normalized.length < RESULTS_PAGE_SIZE) {
+                break;
+            }
+            offset += normalized.length;
+        }
+        return collected;
     }
 
     async function openRemarkModal(options = {}) {
@@ -469,12 +575,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 筛选并显示结果
+    function getColumnCount() {
+        let colCount = 1;
+        if (!hideCompletionCheckbox.checked) colCount++;
+        if (!hideFavoriteCheckbox.checked) colCount++;
+        return colCount;
+    }
+
     function filterAndDisplayResults() {
         resultsBody.innerHTML = '';
-        filteredResults = showIncompleteOnlyCheckbox.checked 
-            ? currentResults.filter(result => result.completion == null)
-            : currentResults;
-        // 后端已排除，无需前端再排除
+        filteredResults = currentResults;
+        // 后端已筛选，无需前端再排除
 
         // 控制表头和表格列的显示
         const completionHeader = document.querySelector('.completion-header');
@@ -491,12 +602,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // 统计显示的列数
-        let colCount = 1;
-        if (!hideCompletionCheckbox.checked) colCount++;
-        if (!hideFavoriteCheckbox.checked) colCount++;
+        const colCount = getColumnCount();
 
         if (filteredResults.length === 0) {
             resultsBody.innerHTML = `<tr><td colspan="${colCount}" class="no-results">没有找到符合条件的记录</td></tr>`;
+            updateScoreCount();
             return;
         }
 
@@ -618,11 +728,75 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        appendResultsOverflow(colCount);
+        updateScoreCount();
+
         // 更新曲谱数量显示
+        refreshRandomCard();
+    }
+
+    function updateScoreCount() {
         const scoreCountSpan = document.getElementById('scoreCount');
-        if (scoreCountSpan) {
-            scoreCountSpan.textContent = `（共${filteredResults.length}个）`;
+        if (!scoreCountSpan) return;
+        const total = Number.isFinite(resultsTotal) && resultsTotal >= 0
+            ? resultsTotal
+            : filteredResults.length;
+        scoreCountSpan.textContent = `（共${total}个）`;
+    }
+
+    function setupResultsObserver(triggerEl) {
+        if (!triggerEl || !('IntersectionObserver' in window)) return;
+        if (resultsObserver) {
+            resultsObserver.disconnect();
         }
+        resultsObserver = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            if (entry && entry.isIntersecting) {
+                loadNextResultsPage({ signal: resultsFetchController?.signal });
+            }
+        }, { rootMargin: '300px 0px' });
+        resultsObserver.observe(triggerEl);
+    }
+
+    function appendResultsOverflow(colCount) {
+        if (!resultsHasMore && !resultsLoading) {
+            return;
+        }
+        const row = document.createElement('tr');
+        row.className = 'results-load-more';
+        const cell = document.createElement('td');
+        cell.colSpan = colCount;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'results-load-more__wrap';
+
+        const info = document.createElement('div');
+        info.className = 'results-load-more__info';
+        const total = Number.isFinite(resultsTotal) ? resultsTotal : filteredResults.length;
+        info.textContent = `已加载 ${filteredResults.length} 条 / 共 ${total} 条`;
+        wrap.appendChild(info);
+
+        if (resultsHasMore) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'results-load-more__btn';
+            btn.textContent = resultsLoading ? '加载中...' : '加载更多';
+            btn.disabled = resultsLoading;
+            btn.addEventListener('click', () => {
+                loadNextResultsPage({ signal: resultsFetchController?.signal });
+            });
+            wrap.appendChild(btn);
+
+            const trigger = document.createElement('div');
+            trigger.className = 'results-load-trigger';
+            trigger.setAttribute('aria-hidden', 'true');
+            wrap.appendChild(trigger);
+            setupResultsObserver(trigger);
+        }
+
+        cell.appendChild(wrap);
+        row.appendChild(cell);
+        resultsBody.appendChild(row);
     }
 
     // 显示提示信息
@@ -645,7 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 添加复选框变化事件监听
-    showIncompleteOnlyCheckbox.addEventListener('change', filterAndDisplayResults);
+    showIncompleteOnlyCheckbox.addEventListener('change', loadData);
     hideCompletionCheckbox.addEventListener('change', filterAndDisplayResults);
     hideFavoriteCheckbox.addEventListener('change', filterAndDisplayResults);
     showAllRemarksCheckbox?.addEventListener('change', filterAndDisplayResults);
@@ -674,21 +848,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 随机复制按钮点击事件
     let lastRandomIndex = null; // 记录上一次随机的 index
-    randomCopyBtn.addEventListener('click', () => {
+    randomCopyBtn.addEventListener('click', async () => {
         console.log('随机复制按钮被点击！');
-        if (filteredResults.length > 0) {
+        const sourceResults = resultsHasMore ? await fetchAllResultsForAction() : filteredResults;
+        if (sourceResults.length > 0) {
             let randomIndex;
-            if (filteredResults.length === 1) {
+            if (sourceResults.length === 1) {
                 randomIndex = 0;
             } else {
                 let attempts = 0;
                 do {
-                    randomIndex = Math.floor(Math.random() * filteredResults.length);
+                    randomIndex = Math.floor(Math.random() * sourceResults.length);
                     attempts++;
-                } while (randomIndex === lastRandomIndex && attempts < filteredResults.length);
+                } while (randomIndex === lastRandomIndex && attempts < sourceResults.length);
             }
             lastRandomIndex = randomIndex;
-            const randomScore = filteredResults[randomIndex];
+            const randomScore = sourceResults[randomIndex];
             const randomScoreCode = randomScore.score_code;
             lastRandomScore = randomScore;
             // 使用兼容性更好的复制方法
@@ -709,6 +884,19 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             showToast('没有可供复制的曲谱码');
         }
+    });
+
+    createPoolFromBatchBtn?.addEventListener('click', async () => {
+        const sourceResults = resultsHasMore ? await fetchAllResultsForAction() : filteredResults;
+        const codes = unique(sourceResults.map(item => item.score_code));
+        const filter = {};
+        if (currentFilters.minCompletion !== null) filter.min_completion = currentFilters.minCompletion;
+        if (currentFilters.maxCompletion !== null) filter.max_completion = currentFilters.maxCompletion;
+        if (currentFilters.favorite) filter.favorite = currentFilters.favorite;
+        if (showIncompleteOnlyCheckbox.checked) filter.incomplete_only = 1;
+        localStorage.setItem('batch_pool_filter', JSON.stringify(filter));
+        localStorage.setItem('batch_pool_codes', JSON.stringify(codes));
+        window.location.href = '/random_pool';
     });
 
     // 卡片渲染和事件绑定
@@ -876,9 +1064,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             
             if (data.success) {
-                displayResults(data.results);
-                // 更新输入框
+                // 更新输入框并触发懒加载查询
                 scoreCodesTextarea.value = data.results.map(r => r.score_code).join('\n');
+                loadData();
                 // 将按钮文本更改为"新鉴赏码"
                 fetchJianshangBtn.textContent = '新鉴赏码';
                 console.log('按钮文本已更改为: 新鉴赏码');
@@ -899,32 +1087,5 @@ document.addEventListener('DOMContentLoaded', () => {
     // Chrome初始化状态监听已移除（不再需要浏览器初始化）
 
     // 初始加载
-    refreshResults();
+    loadData();
 });
-
-
-document.getElementById('createPoolFromBatchBtn').onclick = function() {
-        // 获取当前筛选条件
-        const minCompletion = document.getElementById('minCompletion').value;
-        const maxCompletion = document.getElementById('maxCompletion').value;
-        const favorite = document.getElementById('favoriteFilterBtn') ? document.getElementById('favoriteFilterBtn').dataset.state : null;
-        // 获取当前曲谱码
-        const codes = [];
-        const resultsBody = document.getElementById('resultsBody');
-        for (const row of resultsBody.querySelectorAll('tr')) {
-            const codeCell = row.querySelector('td');
-            if (codeCell && codeCell.textContent && /^\d{5,}$/.test(codeCell.textContent.trim())) {
-                codes.push(codeCell.textContent.trim());
-            }
-        }
-        // 构造数据
-        const filter = {};
-        if (minCompletion) filter.min_completion = parseInt(minCompletion);
-        if (maxCompletion) filter.max_completion = parseInt(maxCompletion);
-        if (favorite) filter.favorite = parseInt(favorite);
-        // 存到localStorage
-        localStorage.setItem('batch_pool_filter', JSON.stringify(filter));
-        localStorage.setItem('batch_pool_codes', JSON.stringify(codes));
-        // 跳转
-        window.location.href = '/random_pool';
-    };

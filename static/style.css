@@ -655,6 +655,59 @@ h1 {
     background-color: var(--remark-row-bg);
 }
 
+#resultsTable td.loading,
+#resultsTable td.error,
+#resultsTable td.no-results {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 18px 20px;
+}
+
+#resultsTable td.error {
+    color: var(--error-text);
+}
+
+.results-load-more td {
+    background-color: var(--bg-secondary);
+    border-bottom: none;
+}
+
+.results-load-more__wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 8px;
+    flex-wrap: wrap;
+}
+
+.results-load-more__info {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+
+.results-load-more__btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--accent-color);
+    background: var(--accent-color);
+    color: #fff;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.results-load-more__btn:hover,
+.results-load-more__btn:focus {
+    background-color: var(--accent-hover);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.results-load-trigger {
+    width: 100%;
+    height: 1px;
+}
+
 .remark-cell-wrap {
     display: flex;
     gap: 8px;

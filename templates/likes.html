@@ -172,6 +172,28 @@
     .viewer-embed { position:relative; width:100%; padding-top:56.25%; border-radius:12px; overflow:hidden; margin-top:10px; background:#000; display:none; }
     .viewer-embed iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
     .viewer-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:auto; padding-top:8px; }
+
+    .likes-load-more {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--border,#e2e2e2);
+      border-radius: 12px;
+      background: var(--card-bg,#fff);
+    }
+    .likes-load-more__info { font-size: 13px; opacity: .8; }
+    .likes-load-more__btn {
+      border:1px solid var(--border,#e2e2e2);
+      background: var(--bg,#fff);
+      padding:6px 12px;
+      border-radius:10px;
+      cursor:pointer;
+      font-size:13px;
+    }
+    .likes-load-trigger { width:100%; height: 1px; }
   </style>
 </head>
 <body>
@@ -326,7 +348,14 @@
     const state = {
       q: '', minRating: 0, videoOnly: false, sort: 'latest'
     };
+    const PAGE_SIZE = 120;
     let currentList = [];
+    let likedOffset = 0;
+    let likedTotal = 0;
+    let likedHasMore = true;
+    let likedLoading = false;
+    let likedObserver = null;
+    let likedController = null;
 
     function setCount(n){ countEl.textContent = `（共 ${n} 首）`; }
 
@@ -344,6 +373,152 @@
         grid.appendChild(card);
       }
       setCount(0);
+    }
+
+    function resetListState(){
+      currentList = [];
+      likedOffset = 0;
+      likedTotal = 0;
+      likedHasMore = true;
+      likedLoading = false;
+      if (likedObserver) {
+        likedObserver.disconnect();
+        likedObserver = null;
+      }
+      if (likedController) {
+        likedController.abort();
+        likedController = null;
+      }
+    }
+
+    async function fetchLikedPage({ offset, limit, signal }){
+      const p = new URLSearchParams();
+      if (state.q) p.set('q', state.q);
+      if (state.minRating) p.set('min_rating', state.minRating);
+      if (state.videoOnly) p.set('has_video', '1');
+      p.set('sort', state.sort);
+      p.set('limit', String(limit));
+      p.set('offset', String(offset));
+      const resp = await fetch('/api/reviews/liked?' + p.toString(), { signal });
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error || '加载失败');
+      return {
+        items: Array.isArray(data.results) ? data.results : [],
+        total: Number.isFinite(data.total) ? data.total : 0
+      };
+    }
+
+    function renderLikesItems(items){
+      items.forEach(item => {
+        const card = createCardElement(item);
+        grid.appendChild(card);
+      });
+    }
+
+    function updateCount(){
+      const total = Number.isFinite(likedTotal) && likedTotal >= 0 ? likedTotal : currentList.length;
+      setCount(total);
+    }
+
+    function setupLikesObserver(triggerEl){
+      if (!triggerEl || !('IntersectionObserver' in window)) return;
+      if (likedObserver) likedObserver.disconnect();
+      likedObserver = new IntersectionObserver((entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
+          loadNextPage({ signal: likedController?.signal });
+        }
+      }, { rootMargin: '300px 0px' });
+      likedObserver.observe(triggerEl);
+    }
+
+    function appendLikesOverflow(){
+      const existing = grid.querySelector('.likes-load-more');
+      if (existing) existing.remove();
+      if (!currentList.length) return;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'likes-load-more';
+      const info = document.createElement('div');
+      info.className = 'likes-load-more__info';
+      const total = Number.isFinite(likedTotal) ? likedTotal : currentList.length;
+      info.textContent = `已加载 ${currentList.length} / 共 ${total} 首`;
+      wrap.appendChild(info);
+
+      if (likedHasMore) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'likes-load-more__btn';
+        btn.textContent = likedLoading ? '加载中…' : '加载更多';
+        btn.disabled = likedLoading;
+        btn.addEventListener('click', () => loadNextPage({ signal: likedController?.signal }));
+        wrap.appendChild(btn);
+
+        const trigger = document.createElement('div');
+        trigger.className = 'likes-load-trigger';
+        trigger.setAttribute('aria-hidden', 'true');
+        wrap.appendChild(trigger);
+        setupLikesObserver(trigger);
+      }
+
+      grid.appendChild(wrap);
+    }
+
+    async function loadNextPage(options = {}){
+      if (likedLoading || !likedHasMore) return;
+      likedLoading = true;
+      try {
+        const result = await fetchLikedPage({
+          offset: likedOffset,
+          limit: PAGE_SIZE,
+          signal: options.signal
+        });
+        if (options.signal && options.signal.aborted) return;
+        const items = result.items || [];
+        if (likedOffset === 0) {
+          grid.innerHTML = '';
+        }
+        likedTotal = result.total;
+        likedOffset += items.length;
+        likedHasMore = likedOffset < likedTotal;
+        currentList = currentList.concat(items);
+
+        if (!currentList.length) {
+          grid.innerHTML = '<div class="muted">还没有喜欢的谱子～ 去首页点 ❤️ 添加一条吧。</div>';
+          if (randomContainer) {
+            randomContainer.innerHTML = '<div class="muted">当前没有可随机的谱子。</div>';
+          }
+          updateCount();
+          return;
+        }
+
+        renderLikesItems(items);
+        updateCount();
+        likedLoading = false;
+        appendLikesOverflow();
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+        grid.innerHTML = '<div class="muted">加载失败</div>';
+      } finally {
+        likedLoading = false;
+      }
+    }
+
+    async function fetchAllLikedForAction(){
+      const collected = [];
+      let offset = 0;
+      let total = Infinity;
+      while (offset < total) {
+        const result = await fetchLikedPage({ offset, limit: PAGE_SIZE });
+        const items = result.items || [];
+        collected.push(...items);
+        if (Number.isFinite(result.total)) {
+          total = result.total;
+        }
+        if (!items.length || items.length < PAGE_SIZE) break;
+        offset += items.length;
+      }
+      return collected;
     }
 
     function toStars(n){
@@ -746,35 +921,13 @@
 
 
     async function load(){
+      resetListState();
       skeleton();
       if (randomContainer) {
         randomContainer.innerHTML = '';
       }
-      const p = new URLSearchParams();
-      if (state.q) p.set('q', state.q);
-      if (state.minRating) p.set('min_rating', state.minRating);
-      if (state.videoOnly) p.set('has_video', '1');
-      p.set('sort', state.sort);
-      p.set('limit', '200');
-      const resp = await fetch('/api/reviews/liked?' + p.toString());
-      const data = await resp.json();
-      if(!data.success){ grid.innerHTML = '<div class="muted">加载失败</div>'; return; }
-      const list = data.results || [];
-      currentList = list;
-      setCount(list.length);
-      if(!list.length){
-        grid.innerHTML = '<div class="muted">还没有喜欢的谱子～ 去首页点 ❤️ 添加一条吧。</div>';
-        if (randomContainer) {
-          randomContainer.innerHTML = '<div class="muted">当前没有可随机的谱子。</div>';
-        }
-        return;
-      }
-
-      grid.innerHTML = '';
-      list.forEach(item => {
-        const card = createCardElement(item);
-        grid.appendChild(card);
-      });
+      likedController = new AbortController();
+      await loadNextPage({ signal: likedController.signal });
     }
 
     // 绑定工具栏
@@ -793,14 +946,15 @@
       });
     });
 
-    randomBtn?.addEventListener('click', ()=>{
-      if (!currentList.length) {
+    randomBtn?.addEventListener('click', async ()=>{
+      const sourceList = likedHasMore ? await fetchAllLikedForAction() : currentList;
+      if (!sourceList.length) {
         if (randomContainer) {
           randomContainer.innerHTML = '<div class="muted">当前没有可随机的谱子。</div>';
         }
         return;
       }
-      const item = currentList[Math.floor(Math.random() * currentList.length)];
+      const item = sourceList[Math.floor(Math.random() * sourceList.length)];
       copy(item.score_code);
       if (!randomContainer) { return; }
       randomContainer.innerHTML = '';
