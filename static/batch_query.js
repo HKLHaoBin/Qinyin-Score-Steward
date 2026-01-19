@@ -1,5 +1,5 @@
 console.log('batch_query.js 脚本开始加载');
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded 事件触发，开始初始化');
     const socket = io();
     const escapeHtml = (str = '') => str
