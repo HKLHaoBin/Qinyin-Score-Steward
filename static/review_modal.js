@@ -45,6 +45,13 @@
       this.toastTimer = null;
       this.ready = true;
 
+      // 新增：暂存相关
+      this.draftPanel = options.draftPanel || null;
+      this.currentDraftId = null;
+      this.isDraftMode = false;
+      this.autoSaveTimer = null;
+      this.autoSaveDelay = 2000; // 2秒无操作后自动暂存
+
       this.bindBaseEvents();
       this.paintStars(Number(this.ratingInput?.value) || 5);
       this.updateVideoSourceUI('upload');
@@ -67,8 +74,31 @@
       this.onSaved = typeof options.onSaved === 'function' ? options.onSaved : null;
       this.setMessage('');
 
+      // 重置暂存状态，每次打开新曲谱码时生成新的 draft_id
+      this.currentDraftId = null;
+      this.isDraftMode = false;
+
       const preferredMode = options.mode || 'auto';
       const fallbackToCreate = options.fallbackToCreate !== false;
+
+      // 检查是否有暂存
+      const draft = this.draftPanel?.getDraft(scoreCode);
+      if (draft && preferredMode === 'create') {
+        // 从暂存打开
+        this.currentDraftId = draft.draft_id;
+        this.isDraftMode = true;
+
+        // 使用暂存数据预填充
+        this.renderCreateMode({
+          rating: draft.rating,
+          comment: draft.comment,
+          video_source: draft.video_source,
+          video_url: draft.video_url
+        });
+
+        this.show();
+        return { mode: this.mode, fromDraft: true };
+      }
 
       if (preferredMode === 'create') {
         this.renderCreateMode(options.prefill || {});
@@ -104,6 +134,13 @@
 
     close() {
       if (!this.ready) return;
+
+      // 清理自动保存定时器
+      if (this.autoSaveTimer) {
+        clearTimeout(this.autoSaveTimer);
+        this.autoSaveTimer = null;
+      }
+
       this.resetPreview();
       if (this.modal) {
         this.modal.classList.remove('is-open');
@@ -117,21 +154,23 @@
     bindBaseEvents() {
       this.boundHandleSubmit = this.handleSubmit.bind(this);
       this.boundClose = this.close.bind(this);
+      this.boundHandleCancel = this.handleCancel.bind(this);
+      this.boundHandleClose = this.handleClose.bind(this);
       this.boundHandleStarClick = (e) => this.handleStarClick(e);
       this.boundHandleStarKeydown = (e) => this.handleStarKeydown(e);
       this.boundHandleFileChange = () => this.updateFileName();
       this.boundHandleEsc = (e) => {
         if (e.key === 'Escape' && this.modal.classList.contains('is-open')) {
-          this.close();
+          this.handleClose();
         }
       };
 
       this.reviewSubmitBtn?.addEventListener('click', this.boundHandleSubmit);
-      this.reviewCancelBtn?.addEventListener('click', this.boundClose);
-      this.reviewCloseBtn?.addEventListener('click', this.boundClose);
+      this.reviewCancelBtn?.addEventListener('click', this.boundHandleCancel);
+      this.reviewCloseBtn?.addEventListener('click', this.boundHandleClose);
       this.modal?.addEventListener('click', (e) => {
         if (e.target.matches('[data-close-modal]')) {
-          this.close();
+          this.handleClose();
         }
       });
       document.addEventListener('keydown', this.boundHandleEsc);
@@ -149,6 +188,104 @@
           });
         });
       }
+    }
+
+    // 新增：取消按钮处理（不暂存）
+    handleCancel() {
+      // 如果是从暂存打开的，删除暂存
+      if (this.currentDraftId && this.draftPanel) {
+        this.draftPanel.removeDraft(this.currentDraftId);
+      }
+      this.currentDraftId = null;
+      this.isDraftMode = false;
+      this.close();
+    }
+
+    // 新增：关闭按钮/点击外部处理（暂存）
+    handleClose() {
+      this.saveAsDraft();
+      this.close();
+    }
+
+    // 新增：保存为暂存
+    saveAsDraft() {
+      if (this.mode !== 'create' || !this.scoreCode) return;
+
+      console.log('[Draft] 触发自动保存，曲谱码:', this.scoreCode);
+
+      // 获取当前表单数据
+      const rating = Number(this.ratingInput?.value) || 5;
+      const comment = (this.commentInput?.value || '').trim();
+      const videoSource = this.getSelectedVideoSource();
+      const videoUrl = (this.videoUrlInput?.value || '').trim();
+
+      // 如果没有任何内容，不保存
+      if (!comment && !videoUrl && rating === 5) {
+        console.log('[Draft] 暂存内容为空，跳过保存');
+        return;
+      }
+
+      // 生成或使用现有draft_id
+      const draftId = this.currentDraftId || `draft_${this.scoreCode}_${Date.now()}`;
+
+      const draftData = {
+        draft_id: draftId,
+        score_code: this.scoreCode,
+        rating: rating,
+        comment: comment,
+        video_source: videoSource,
+        video_url: videoUrl,
+        updated_at: new Date().toISOString()
+      };
+
+      console.log('[Draft] 保存暂存数据:', draftData);
+
+      // 保存到暂存面板
+      if (this.draftPanel) {
+        this.draftPanel.upsertDraft(draftData);
+        this.currentDraftId = draftId;
+        this.isDraftMode = true;
+      }
+    }
+
+    // 新增：调度自动保存
+    scheduleAutoSave() {
+      console.log('[Draft] 检测到输入变化，将在2秒后自动保存');
+
+      if (this.autoSaveTimer) {
+        clearTimeout(this.autoSaveTimer);
+      }
+
+      this.autoSaveTimer = setTimeout(() => {
+        this.saveAsDraft();
+      }, this.autoSaveDelay);
+    }
+
+    // 新增：设置自动保存监听
+    setupAutoSave() {
+      // 清除现有定时器
+      if (this.autoSaveTimer) {
+        clearTimeout(this.autoSaveTimer);
+      }
+
+      // 监听输入变化
+      const inputs = [
+        this.ratingInput,
+        this.commentInput,
+        this.videoUrlInput
+      ];
+
+      const videoSourceRadios = document.querySelectorAll('input[name="reviewVideoSource"]');
+
+      inputs.forEach(input => {
+        if (input) {
+          input.addEventListener('input', () => this.scheduleAutoSave());
+        }
+      });
+
+      videoSourceRadios.forEach(radio => {
+        radio.addEventListener('change', () => this.scheduleAutoSave());
+      });
     }
 
     handleSubmit() {
@@ -200,6 +337,14 @@
         .then((data) => {
           this.setMessage('保存成功！');
           this.toast('评价已保存');
+
+          // 删除暂存
+          if (this.currentDraftId && this.draftPanel) {
+            this.draftPanel.removeDraft(this.currentDraftId);
+          }
+          this.currentDraftId = null;
+          this.isDraftMode = false;
+
           if (typeof this.onSaved === 'function') {
             try {
               this.onSaved(data);
@@ -295,6 +440,9 @@
       const source = prefill.video_source || 'upload';
       this.selectVideoSource(source);
       this.resetPreview();
+
+      // 添加输入监听，触发自动保存
+      this.setupAutoSave();
     }
 
     show() {

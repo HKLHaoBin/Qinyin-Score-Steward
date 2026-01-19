@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     if (typeof io === 'undefined') {
         console.error('Socket.IO 库未正确加载，请检查网络连接或刷新页面');
         alert('Socket.IO 库加载失败，部分功能可能无法正常使用。请检查网络连接后刷新页面。');
@@ -690,20 +690,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 加载历史记录
     refreshHistory();
+
+    // 初始化评价弹窗
+    await initReviewModal(socket);
 });
 
-// 等待 DOM 加载完成
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initReviewModal);
-} else {
-  initReviewModal();
-}
-
-function initReviewModal() {
+async function initReviewModal(socket) {
   const reviewBtn = document.getElementById('reviewBtn');
   const favoriteBtn = document.getElementById('favoriteBtn');
   const currentScoreEl = document.getElementById('currentScoreCode');
-  const modalInstance = new ReviewModal();
+
+  // 初始化DraftPanel
+  let draftPanel = null;
+  async function initDraftPanel() {
+    try {
+      console.log('[DraftPanel] 开始初始化DraftPanel...');
+      // 获取session_id
+      const sessionResp = await fetch('/api/session');
+      const sessionData = await sessionResp.json();
+      const sessionId = sessionData.session_id;
+      console.log('[DraftPanel] 获取到session_id:', sessionId);
+
+      // 创建DraftPanel实例
+      draftPanel = new DraftPanel({
+        sessionId: sessionId,
+        socket: socket,
+        onSelectDraft: (draft) => {
+          // 打开评价弹窗并预填充暂存数据
+          modalInstance.open({
+            scoreCode: draft.score_code,
+            mode: 'create',
+            prefill: {
+              rating: draft.rating,
+              comment: draft.comment,
+              video_source: draft.video_source,
+              video_url: draft.video_url
+            }
+          });
+        }
+      });
+      console.log('[DraftPanel] DraftPanel初始化完成');
+    } catch (error) {
+      console.error('DraftPanel初始化失败:', error);
+    }
+  }
+
+  // 等待DraftPanel初始化完成
+  await initDraftPanel();
+
+  console.log('[ReviewModal] DraftPanel已初始化，值为:', draftPanel);
+
+  // 初始化ReviewModal，传入draftPanel
+  const modalInstance = new ReviewModal({
+    draftPanel: draftPanel
+  });
 
   if (!reviewBtn || !modalInstance.isReady()) {
     console.warn('ReviewModal: 初始化失败，缺少必要节点');
@@ -735,7 +775,6 @@ function initReviewModal() {
     favObserver.observe(favoriteBtn, { attributes: true, attributeFilter: ['style', 'class'] });
   }
 
-  const socket = window.io?.();
   if (socket) {
     socket.on('clipboard_update', (data) => {
       if (data?.type === 'score_code' && data?.score_code) {

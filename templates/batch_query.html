@@ -210,8 +210,26 @@
       </div>
     </div>
 
+    <!-- 暂存悬浮按钮 -->
+    <button id="draftFab" class="qyj-draft-fab" title="暂存的评价">
+        📝
+        <span id="draftBadge" class="qyj-draft-badge hidden">0</span>
+    </button>
+
+    <!-- 暂存列表面板 -->
+    <div id="draftPanel" class="qyj-draft-panel">
+        <div class="qyj-draft-panel__header">
+            <span class="qyj-draft-panel__title">暂存的评价</span>
+            <span id="draftClearBtn" class="qyj-draft-panel__clear">清空</span>
+        </div>
+        <div id="draftList" class="qyj-draft-panel__list">
+            <div class="qyj-draft-panel__empty">暂无暂存的评价</div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="{{ url_for('static', filename='review_modal.js') }}"></script>
     <script src="{{ url_for('static', filename='batch_query.js') }}"></script>
+    <script src="{{ url_for('static', filename='draft_panel.js') }}"></script>
 </body>
 </html> 

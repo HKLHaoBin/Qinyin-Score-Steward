@@ -1,13 +1,14 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session
 import sqlite3
 import os
 import pyperclip
 import threading
 import time
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, join_room, leave_room, emit
 import re
 from datetime import datetime
 import shutil
+import secrets
 # 获取本机IP地址
 import socket
 import pyperclip
@@ -24,6 +25,15 @@ from collections import Counter
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
+
+# Session管理
+app.secret_key = 'your-secret-key-change-in-production'  # 生产环境应从配置读取
+
+def get_or_create_session_id():
+    """获取或创建用户的session_id"""
+    if 'session_id' not in session:
+        session['session_id'] = secrets.token_hex(16)
+    return session['session_id']
 
 # —— 上传配置 ——
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads', 'videos')
@@ -576,6 +586,14 @@ def serve_uploaded_video(filename):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/api/session', methods=['GET'])
+def get_session():
+    """获取当前用户的session_id，用于WebSocket同步"""
+    return jsonify({
+        'success': True,
+        'session_id': get_or_create_session_id()
+    })
 
 @app.route('/api/scores', methods=['GET'])
 def get_scores():
@@ -2003,6 +2021,59 @@ def handle_file_too_large(e):
         'success': False,
         'error': f'文件太大了！请上传小于500MB的文件，或使用视频压缩功能。'
     }), 413
+
+# WebSocket事件处理
+@socketio.on('connect')
+def handle_connect():
+    """客户端连接时加入对应的drafts room"""
+    session_id = get_or_create_session_id()
+    join_room(f'drafts_{session_id}')
+    print(f"客户端已连接，加入room: drafts_{session_id}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """客户端断开连接时退出room"""
+    session_id = get_or_create_session_id()
+    leave_room(f'drafts_{session_id}')
+    print(f"客户端已断开，退出room: drafts_{session_id}")
+
+@socketio.on('draft_update')
+def handle_draft_update(data):
+    """
+    接收暂存更新并广播给同一session_id的其他客户端
+    data结构: {
+        'session_id': str,
+        'draft': {
+            'draft_id': str,
+            'score_code': str,
+            'rating': int,
+            'comment': str,
+            'video_source': str,
+            'video_url': str,
+            'updated_at': str
+        }
+    }
+    """
+    session_id = data.get('session_id')
+    if not session_id:
+        return
+
+    # 广播给同一session_id的其他客户端
+    emit('draft_update', data.get('draft'), room=f'drafts_{session_id}', include_self=False)
+
+@socketio.on('draft_delete')
+def handle_draft_delete(data):
+    """
+    接收暂存删除并广播
+    data结构: {
+        'session_id': str,
+        'draft_id': str
+    }
+    """
+    session_id = data.get('session_id')
+    draft_id = data.get('draft_id')
+    if session_id and draft_id:
+        emit('draft_delete', {'draft_id': draft_id}, room=f'drafts_{session_id}', include_self=False)
 
 if __name__ == '__main__':
     # 启动时备份数据库

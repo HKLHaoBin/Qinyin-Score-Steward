@@ -39,7 +39,51 @@ document.addEventListener('DOMContentLoaded', () => {
     const remarkCloseBtn = document.getElementById('remarkCloseBtn');
     const remarkSummary = document.getElementById('remarkSummary');
     const remarkMsg = document.getElementById('remarkMsg');
-    const reviewModalInstance = new ReviewModal();
+
+    // 初始化DraftPanel
+    let draftPanel = null;
+    async function initDraftPanel() {
+        try {
+            console.log('[DraftPanel] 批量查询页 - 开始初始化DraftPanel...');
+            // 获取session_id
+            const sessionResp = await fetch('/api/session');
+            const sessionData = await sessionResp.json();
+            const sessionId = sessionData.session_id;
+            console.log('[DraftPanel] 批量查询页 - 获取到session_id:', sessionId);
+
+            // 创建DraftPanel实例
+            draftPanel = new DraftPanel({
+                sessionId: sessionId,
+                socket: socket,
+                onSelectDraft: (draft) => {
+                    // 打开评价弹窗并预填充暂存数据
+                    reviewModalInstance.open({
+                        scoreCode: draft.score_code,
+                        mode: 'create',
+                        prefill: {
+                            rating: draft.rating,
+                            comment: draft.comment,
+                            video_source: draft.video_source,
+                            video_url: draft.video_url
+                        }
+                    });
+                }
+            });
+            console.log('[DraftPanel] 批量查询页 - DraftPanel初始化完成');
+        } catch (error) {
+            console.error('DraftPanel初始化失败:', error);
+        }
+    }
+
+    // 等待DraftPanel初始化完成
+    await initDraftPanel();
+
+    console.log('[ReviewModal] 批量查询页 - DraftPanel已初始化，值为:', draftPanel);
+
+    // 初始化ReviewModal，传入draftPanel
+    const reviewModalInstance = new ReviewModal({
+        draftPanel: draftPanel
+    });
     if (!reviewModalInstance.isReady()) {
         console.warn('ReviewModal: 批量查询页弹窗初始化失败');
     }
