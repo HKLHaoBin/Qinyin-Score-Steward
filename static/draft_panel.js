@@ -16,33 +16,35 @@
             // 状态
             this.drafts = [];
             this.isOpen = false;
-
-            // 本地存储key
-            this.storageKey = 'review_drafts';
-
-            this.init();
         }
 
-        init() {
+        // 静态方法：创建并初始化 DraftPanel 实例
+        static async create(options = {}) {
+            const instance = new DraftPanel(options);
+            await instance.init();
+            return instance;
+        }
+
+        async init() {
             if (!this.fab || !this.panel) {
                 console.warn('DraftPanel: 缺少必要DOM元素');
                 return;
             }
 
-            // 加载本地暂存
-            this.loadFromStorage();
-
             // 绑定事件
             this.bindEvents();
-
-            // 更新UI
-            this.updateBadge();
-            this.renderList();
 
             // 监听WebSocket同步
             if (this.socket) {
                 this.setupSocketListeners();
             }
+
+            // 从后端加载暂存（等待完成）
+            await this.loadFromServer();
+
+            // 更新UI（在加载完成后）
+            this.updateBadge();
+            this.renderList();
         }
 
         bindEvents() {
@@ -80,41 +82,95 @@
                 return;
             }
 
-            // 接收其他设备的暂存更新
-            this.socket.on('draft_update', (draft) => {
-                this.syncDraft(draft);
-            });
-
-            // 接收其他设备的暂存删除
-            this.socket.on('draft_delete', (data) => {
-                this.removeDraft(data.draft_id);
+            // 接收暂存同步（完整的暂存数组）
+            this.socket.on('drafts_sync', (drafts) => {
+                if (Array.isArray(drafts)) {
+                    this.drafts = drafts;
+                    this.updateBadge();
+                    this.renderList();
+                    console.log('[DraftPanel] 接收到暂存同步:', drafts.length, '条');
+                }
             });
         }
 
-        loadFromStorage() {
+        // 从后端加载暂存
+        async loadFromServer() {
             try {
-                const data = localStorage.getItem(this.storageKey);
-                if (data) {
-                    this.drafts = JSON.parse(data);
-                    // 按更新时间降序排序
-                    this.drafts.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+                const resp = await fetch('/api/drafts');
+                const data = await resp.json();
+                if (data.success) {
+                    this.drafts = data.drafts || [];
+                    console.log('[DraftPanel] 从后端加载暂存成功:', this.drafts.length, '条');
+                } else {
+                    console.error('[DraftPanel] 加载暂存失败:', data.error);
+                    this.drafts = [];
                 }
             } catch (error) {
-                console.error('加载暂存数据失败:', error);
+                console.error('[DraftPanel] 加载暂存异常:', error);
                 this.drafts = [];
             }
         }
 
-        saveToStorage() {
+        // 保存暂存到后端
+        async saveToServer(draftData) {
             try {
-                localStorage.setItem(this.storageKey, JSON.stringify(this.drafts));
+                const resp = await fetch('/api/drafts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(draftData)
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    console.error('[DraftPanel] 保存暂存失败:', data.error);
+                    return false;
+                }
+                return true;
             } catch (error) {
-                console.error('保存暂存数据失败:', error);
+                console.error('[DraftPanel] 保存暂存异常:', error);
+                return false;
+            }
+        }
+
+        // 删除暂存从后端
+        async deleteFromServer(draftId) {
+            try {
+                const resp = await fetch(`/api/drafts/${draftId}`, {
+                    method: 'DELETE'
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    console.error('[DraftPanel] 删除暂存失败:', data.error);
+                    return false;
+                }
+                return true;
+            } catch (error) {
+                console.error('[DraftPanel] 删除暂存异常:', error);
+                return false;
+            }
+        }
+
+        // 清空所有暂存从后端
+        async clearAllFromServer() {
+            try {
+                const resp = await fetch('/api/drafts', {
+                    method: 'DELETE'
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    console.error('[DraftPanel] 清空暂存失败:', data.error);
+                    return false;
+                }
+                return true;
+            } catch (error) {
+                console.error('[DraftPanel] 清空暂存异常:', error);
+                return false;
             }
         }
 
         // 添加或更新暂存
-        upsertDraft(draftData) {
+        async upsertDraft(draftData) {
             console.log('[DraftPanel] upsertDraft 被调用，当前drafts数量:', this.drafts.length);
             console.log('[DraftPanel] 接收到的draftData:', draftData);
 
@@ -144,91 +200,46 @@
             console.log('[DraftPanel] 更新后drafts数量:', this.drafts.length);
             console.log('[DraftPanel] 当前drafts数组:', this.drafts);
 
-            this.saveToStorage();
-            this.updateBadge();
-            this.renderList();
-
-            // 通过WebSocket同步到其他设备
-            this.broadcastDraft(draft);
+            // 保存到后端
+            const success = await this.saveToServer(draft);
+            if (success) {
+                this.updateBadge();
+                this.renderList();
+            }
         }
 
         // 删除暂存
-        removeDraft(draftId) {
+        async removeDraft(draftId) {
             const index = this.drafts.findIndex(d => d.draft_id === draftId);
             if (index >= 0) {
                 this.drafts.splice(index, 1);
-                this.saveToStorage();
-                this.updateBadge();
-                this.renderList();
-
-                // 通过WebSocket同步到其他设备
-                this.broadcastDelete(draftId);
+                // 删除从后端
+                const success = await this.deleteFromServer(draftId);
+                if (success) {
+                    this.updateBadge();
+                    this.renderList();
+                }
             }
         }
 
         // 清空所有暂存
-        clearAll() {
+        async clearAll() {
             if (this.drafts.length === 0) return;
 
             if (confirm('确定要清空所有暂存的评价吗？')) {
-                const draftIds = this.drafts.map(d => d.draft_id);
-                this.drafts = [];
-                this.saveToStorage();
-                this.updateBadge();
-                this.renderList();
-
-                // 广播删除
-                draftIds.forEach(id => this.broadcastDelete(id));
+                // 清空从后端
+                const success = await this.clearAllFromServer();
+                if (success) {
+                    this.drafts = [];
+                    this.updateBadge();
+                    this.renderList();
+                }
             }
         }
 
         // 获取指定曲谱码的暂存
         getDraft(scoreCode) {
             return this.drafts.find(d => d.score_code === scoreCode);
-        }
-
-        // 同步其他设备的暂存
-        syncDraft(draft) {
-            const existingIndex = this.drafts.findIndex(d => d.draft_id === draft.draft_id);
-
-            if (existingIndex >= 0) {
-                // 比较时间戳，保留最新的
-                const existing = this.drafts[existingIndex];
-                if (new Date(draft.updated_at) > new Date(existing.updated_at)) {
-                    this.drafts[existingIndex] = draft;
-                    this.drafts.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-                    this.saveToStorage();
-                    this.updateBadge();
-                    this.renderList();
-                }
-            } else {
-                // 新增暂存
-                this.drafts.unshift(draft);
-                this.drafts.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-                this.saveToStorage();
-                this.updateBadge();
-                this.renderList();
-            }
-        }
-
-        // 广播暂存更新
-        broadcastDraft(draft) {
-            if (this.socket && this.sessionId) {
-                this.socket.emit('draft_update', {
-                    session_id: this.sessionId,
-                    draft: draft
-                });
-            }
-        }
-
-        // 广播暂存删除
-        broadcastDelete(draftId) {
-            if (this.socket && this.sessionId) {
-                this.socket.emit('draft_delete', {
-                    session_id: this.sessionId,
-                    draft_id: draftId
-                });
-            }
         }
 
         // 更新徽章

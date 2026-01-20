@@ -712,7 +712,7 @@ async function initReviewModal(socket) {
       console.log('[DraftPanel] 获取到session_id:', sessionId);
 
       // 创建DraftPanel实例
-      draftPanel = new DraftPanel({
+      draftPanel = await DraftPanel.create({
         sessionId: sessionId,
         socket: socket,
         onSelectDraft: (draft) => {

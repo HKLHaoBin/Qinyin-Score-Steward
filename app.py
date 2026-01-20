@@ -41,6 +41,11 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB 上限（按需调整）
 ALLOWED_VIDEO_EXTS = {'mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv'}
 
+# —— 暂存配置 ——
+app.config['DRAFTS_FOLDER'] = os.path.join(os.path.dirname(__file__), 'static', 'drafts')
+os.makedirs(app.config['DRAFTS_FOLDER'], exist_ok=True)
+DRAFTS_FILE = os.path.join(app.config['DRAFTS_FOLDER'], 'drafts.json')
+
 # 视频压缩配置
 VIDEO_COMPRESS_THRESHOLD = 500 * 1024 * 1024  # 500MB 超过此大小自动压缩
 VIDEO_COMPRESS_TARGET_SIZE = 450 * 1024 * 1024  # 压缩目标大小 450MB以内
@@ -2022,6 +2027,148 @@ def handle_file_too_large(e):
         'error': f'文件太大了！请上传小于500MB的文件，或使用视频压缩功能。'
     }), 413
 
+# ========== 暂存相关 API ==========
+
+def load_drafts_from_file():
+    """从文件加载暂存数据"""
+    try:
+        if os.path.exists(DRAFTS_FILE):
+            with open(DRAFTS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return []
+    except Exception as e:
+        print(f"加载暂存数据失败: {e}")
+        return []
+
+def save_drafts_to_file(drafts):
+    """保存暂存数据到文件"""
+    try:
+        with open(DRAFTS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(drafts, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"保存暂存数据失败: {e}")
+        return False
+
+@app.route('/api/drafts', methods=['GET'])
+def get_drafts():
+    """获取所有暂存数据"""
+    try:
+        drafts = load_drafts_from_file()
+        # 按更新时间降序排序
+        drafts.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+        return jsonify({
+            'success': True,
+            'drafts': drafts
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/drafts', methods=['POST'])
+def save_draft():
+    """保存或更新暂存"""
+    try:
+        data = request.get_json()
+        draft_id = data.get('draft_id')
+        score_code = data.get('score_code')
+        rating = data.get('rating', 5)
+        comment = data.get('comment', '')
+        video_source = data.get('video_source', 'upload')
+        video_url = data.get('video_url', '')
+        updated_at = data.get('updated_at', datetime.now().isoformat())
+
+        # 校验
+        if not is_valid_score_code(score_code):
+            return jsonify({'success': False, 'error': '无效的曲谱码'}), 400
+
+        if not draft_id:
+            draft_id = f"draft_{score_code}_{int(time.time())}"
+
+        # 加载现有暂存
+        drafts = load_drafts_from_file()
+
+        # 查找是否存在
+        existing_index = -1
+        for i, d in enumerate(drafts):
+            if d.get('draft_id') == draft_id:
+                existing_index = i
+                break
+
+        # 构建暂存对象
+        draft = {
+            'draft_id': draft_id,
+            'score_code': score_code,
+            'rating': rating,
+            'comment': comment,
+            'video_source': video_source,
+            'video_url': video_url,
+            'updated_at': updated_at
+        }
+
+        if existing_index >= 0:
+            # 更新现有暂存
+            drafts[existing_index] = draft
+        else:
+            # 添加新暂存
+            drafts.append(draft)
+
+        # 按更新时间排序
+        drafts.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+
+        # 保存到文件
+        if save_drafts_to_file(drafts):
+            # 通过 WebSocket 广播完整的暂存数组
+            socketio.emit('drafts_sync', drafts)
+
+            return jsonify({
+                'success': True,
+                'draft': draft
+            })
+        else:
+            return jsonify({'success': False, 'error': '保存失败'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/drafts/<draft_id>', methods=['DELETE'])
+def delete_draft(draft_id):
+    """删除指定暂存"""
+    try:
+        drafts = load_drafts_from_file()
+
+        # 查找并删除
+        new_drafts = [d for d in drafts if d.get('draft_id') != draft_id]
+
+        if len(new_drafts) == len(drafts):
+            return jsonify({'success': False, 'error': '暂存不存在'}), 404
+
+        # 保存到文件
+        if save_drafts_to_file(new_drafts):
+            # 通过 WebSocket 广播完整的暂存数组
+            socketio.emit('drafts_sync', new_drafts)
+
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': '删除失败'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/drafts', methods=['DELETE'])
+def clear_all_drafts():
+    """清空所有暂存"""
+    try:
+        if save_drafts_to_file([]):
+            # 通过 WebSocket 广播完整的暂存数组
+            socketio.emit('drafts_sync', [])
+
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': '清空失败'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # WebSocket事件处理
 @socketio.on('connect')
 def handle_connect():
@@ -2036,44 +2183,6 @@ def handle_disconnect():
     session_id = get_or_create_session_id()
     leave_room(f'drafts_{session_id}')
     print(f"客户端已断开，退出room: drafts_{session_id}")
-
-@socketio.on('draft_update')
-def handle_draft_update(data):
-    """
-    接收暂存更新并广播给同一session_id的其他客户端
-    data结构: {
-        'session_id': str,
-        'draft': {
-            'draft_id': str,
-            'score_code': str,
-            'rating': int,
-            'comment': str,
-            'video_source': str,
-            'video_url': str,
-            'updated_at': str
-        }
-    }
-    """
-    session_id = data.get('session_id')
-    if not session_id:
-        return
-
-    # 广播给同一session_id的其他客户端
-    emit('draft_update', data.get('draft'), room=f'drafts_{session_id}', include_self=False)
-
-@socketio.on('draft_delete')
-def handle_draft_delete(data):
-    """
-    接收暂存删除并广播
-    data结构: {
-        'session_id': str,
-        'draft_id': str
-    }
-    """
-    session_id = data.get('session_id')
-    draft_id = data.get('draft_id')
-    if session_id and draft_id:
-        emit('draft_delete', {'draft_id': draft_id}, room=f'drafts_{session_id}', include_self=False)
 
 if __name__ == '__main__':
     # 启动时备份数据库
